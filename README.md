@@ -30,8 +30,12 @@ A lightweight, always-on-top transparent gaming crosshair overlay for Windows wi
    ```powershell
    python -m pip install psutil
    ```
+   If psuitl doesn't install pillow automatically run:
+    ```powershell
+    pip install pillow
+    ```
 
-3. **Done!** The overlay executable is pre-built at:
+4. **Done!** The overlay executable is pre-built at:
    ```
    x64\Release\AuroraCrosshairDX.exe
    ```
