@@ -161,6 +161,7 @@
     <ClInclude Include="include\Window.h" />
     <ClInclude Include="include\DXRenderer.h" />
     <ClInclude Include="include\CrosshairManager.h" />
+    <ClInclude Include="include\OverlayLogic.h" />
     <ClInclude Include="include\stb_image.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
