@@ -1,3 +1,5 @@
+> Historical project notes. See the [current README](README.md) for the active GDI/WIC/Tk implementation, build instructions and validation. CPU/FPS/readiness claims below are unverified historical statements.
+
 # AuroraCrosshairDX Project Overview
 
 ## About This Project
