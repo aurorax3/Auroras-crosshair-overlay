@@ -1,0 +1,213 @@
+{
+  "schema_version": 1,
+  "scope": "Linux Python GUI process; no native Windows/game measurements",
+  "baseline_run_id": "linux-gui-baseline-matched-01",
+  "candidate_run_id": "linux-gui-optimized-01",
+  "asset_manifest": {
+    "png_count": 390,
+    "relative_paths_and_contents_sha256": "bf751bd56b98cec1b0d0636e25aead119e2614d52e1e121b08261f52c431df3c"
+  },
+  "harness_sha256": "94aad6973422b88aad441303408c641b319f811b1068623c8d7e3df85c860b18",
+  "baseline": {
+    "startup_wall_seconds": {
+      "median": 0.7788555429999633,
+      "min": 0.7532765480000307,
+      "max": 0.8023603690000982,
+      "samples": [
+        0.7788555429999633,
+        0.8023603690000982,
+        0.7532765480000307
+      ]
+    },
+    "startup_cpu_seconds": {
+      "median": 0.715177063,
+      "min": 0.68994168,
+      "max": 0.738918747,
+      "samples": [
+        0.715177063,
+        0.738918747,
+        0.68994168
+      ]
+    },
+    "startup_rss_mib": {
+      "median": 66.92578125,
+      "min": 66.921875,
+      "max": 66.92578125,
+      "samples": [
+        66.92578125,
+        66.921875,
+        66.92578125
+      ]
+    },
+    "startup_preview_count": [
+      194,
+      194,
+      194
+    ],
+    "visible_idle_cpu_percent_one_core": {
+      "median": 0.25331753012594277,
+      "min": 0.21172992943201144,
+      "max": 0.31425862480339223,
+      "samples": [
+        0.31425862480339223,
+        0.21172992943201144,
+        0.25331753012594277
+      ]
+    },
+    "withdrawn_idle_cpu_percent_one_core": {
+      "median": 0.19358547960546332,
+      "min": 0.1839831794633327,
+      "max": 0.2395980155358057,
+      "samples": [
+        0.2395980155358057,
+        0.19358547960546332,
+        0.1839831794633327
+      ]
+    },
+    "idle_config_commits": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ]
+    ],
+    "slider_config_commits": [
+      100,
+      100,
+      100
+    ],
+    "slider_burst_wall_seconds_including_settle": {
+      "median": 2.3298903820000305,
+      "min": 2.327138482999999,
+      "max": 2.348975203000009,
+      "samples": [
+        2.348975203000009,
+        2.3298903820000305,
+        2.327138482999999
+      ]
+    },
+    "slider_cpu_seconds": {
+      "median": 0.0329064830000001,
+      "min": 0.032366703,
+      "max": 0.04574120999999998,
+      "samples": [
+        0.04574120999999998,
+        0.0329064830000001,
+        0.032366703
+      ]
+    }
+  },
+  "candidate": {
+    "startup_wall_seconds": {
+      "median": 0.11315741799990064,
+      "min": 0.11008695999998963,
+      "max": 0.11421742299990001,
+      "samples": [
+        0.11315741799990064,
+        0.11421742299990001,
+        0.11008695999998963
+      ]
+    },
+    "startup_cpu_seconds": {
+      "median": 0.06657424400000003,
+      "min": 0.06507644700000001,
+      "max": 0.06801861199999998,
+      "samples": [
+        0.06657424400000003,
+        0.06801861199999998,
+        0.06507644700000001
+      ]
+    },
+    "startup_rss_mib": {
+      "median": 35.44140625,
+      "min": 35.4375,
+      "max": 35.4453125,
+      "samples": [
+        35.4375,
+        35.44140625,
+        35.4453125
+      ]
+    },
+    "startup_preview_count": [
+      28,
+      28,
+      28
+    ],
+    "visible_idle_cpu_percent_one_core": {
+      "median": 0.24275472769426992,
+      "min": 0.21206973930907674,
+      "max": 0.28857812381184517,
+      "samples": [
+        0.28857812381184517,
+        0.21206973930907674,
+        0.24275472769426992
+      ]
+    },
+    "withdrawn_idle_cpu_percent_one_core": {
+      "median": 0.22639758853511718,
+      "min": 0.19334086971198078,
+      "max": 0.23240152953484575,
+      "samples": [
+        0.22639758853511718,
+        0.23240152953484575,
+        0.19334086971198078
+      ]
+    },
+    "idle_config_commits": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        0
+      ]
+    ],
+    "slider_config_commits": [
+      25,
+      25,
+      25
+    ],
+    "slider_burst_wall_seconds_including_settle": {
+      "median": 2.3369718139999804,
+      "min": 2.3326906600000257,
+      "max": 2.3393766439999126,
+      "samples": [
+        2.3393766439999126,
+        2.3369718139999804,
+        2.3326906600000257
+      ]
+    },
+    "slider_cpu_seconds": {
+      "median": 0.03897602099999997,
+      "min": 0.03563582100000001,
+      "max": 0.04066979300000001,
+      "samples": [
+        0.04066979300000001,
+        0.03897602099999997,
+        0.03563582100000001
+      ]
+    }
+  },
+  "interpretation": [
+    "Same finalized harness, resource content, seeded dots/osupink.png settings and Xvfb1280x900x24 display; three fresh processes per version.",
+    "Baseline captured first, candidate second; shared cloud host has no controlled Windows gaming workload.",
+    "Startup candidate intentionally loads only28 selected-category previews; baseline eagerly loads194. Other categories are deferred, not removed.",
+    "Idle CPU ranges overlap; these short runs do not support an idle CPU improvement claim.",
+    "The100 slider events request Tk.after(5), but actual burst wall times are about2.33seconds including300ms settle; requested timer spacing is not measured realized spacing.",
+    "Config commits100to25 are measured filesystem publications; CPU cost did not show a supported reduction and frame/game impacts remain unmeasured.",
+    "Withdrawn means hidden under Xvfb without a window manager, not Windows minimized.",
+    "All trials persisted the same finalscale3.0 and dots/osupink.png selection."
+  ]
+}

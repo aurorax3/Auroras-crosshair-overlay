@@ -1,0 +1,214 @@
+{
+  "schema_version": 1,
+  "run_id": "linux-gui-optimized-01",
+  "harness_sha256": "94aad6973422b88aad441303408c641b319f811b1068623c8d7e3df85c860b18",
+  "source_sha256": "ed051fff73b3143418fcd51f33b6b1ca3786a99a655f6cc48a78c26db21c71b1",
+  "asset_manifest": {
+    "png_count": 390,
+    "relative_paths_and_contents_sha256": "bf751bd56b98cec1b0d0636e25aead119e2614d52e1e121b08261f52c431df3c"
+  },
+  "source": "/workspace/Auroras-crosshair-overlay/CrosshairGUI/gui.py",
+  "scenario": "fresh process, warm up 300ms, visible idle, withdrawn idle, 100 slider callbacks at 5ms, settle 300ms",
+  "trials": [
+    {
+      "startup": {
+        "wall_seconds": 0.11315741799990064,
+        "cpu_seconds": 0.06657424400000003,
+        "rss_bytes": 37158912,
+        "config_commits": 0,
+        "tabs": 5,
+        "previews": 28
+      },
+      "idle": [
+        {
+          "requested_state": "visible",
+          "tk_state": "normal",
+          "wall_seconds": 5.015547196999933,
+          "cpu_seconds": 0.014473771999999996,
+          "cpu_percent_one_core": 0.28857812381184517,
+          "rss_start_bytes": 37158912,
+          "rss_end_bytes": 37158912,
+          "config_commits": 0
+        },
+        {
+          "requested_state": "withdrawn",
+          "tk_state": "withdrawn",
+          "wall_seconds": 5.011827676000166,
+          "cpu_seconds": 0.011346656999999982,
+          "cpu_percent_one_core": 0.22639758853511718,
+          "rss_start_bytes": 37167104,
+          "rss_end_bytes": 37167104,
+          "config_commits": 0
+        }
+      ],
+      "slider_burst": {
+        "events": 100,
+        "event_interval_ms": 5,
+        "wall_seconds": 2.3393766439999126,
+        "cpu_seconds": 0.04066979300000001,
+        "config_commits": 25,
+        "final_config": "scale=3.0\ncrosshair=dots/osupink.png\n"
+      },
+      "environment": {
+        "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+        "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+        "tk": 9.0,
+        "pillow": "12.3.0",
+        "psutil": "7.2.2",
+        "logical_cpus": 5,
+        "display": ":99",
+        "display_description": "Xvfb1280x900x24, no window manager",
+        "hidden_state": "withdrawn, not Windows minimized",
+        "source_sha256": "ed051fff73b3143418fcd51f33b6b1ca3786a99a655f6cc48a78c26db21c71b1",
+        "source": "/workspace/Auroras-crosshair-overlay/CrosshairGUI/gui.py",
+        "assets": "/workspace/Auroras-crosshair-overlay/AuroraCrosshairDX/resources/crosshairs",
+        "cpu_scope": "Python process only; excludes display server CPU",
+        "cpu_model": "unavailable",
+        "resource_layout": "symlink",
+        "adjacent_python_sha256": {
+          "gui.py": "ed051fff73b3143418fcd51f33b6b1ca3786a99a655f6cc48a78c26db21c71b1",
+          "overlay_config.py": "01f5cc9d6681e6c2f0d596ffe5ed8c42c3e17f1d8f0b8fd4cca187f5890e5e9c"
+        }
+      }
+    },
+    {
+      "startup": {
+        "wall_seconds": 0.11421742299990001,
+        "cpu_seconds": 0.06801861199999998,
+        "rss_bytes": 37163008,
+        "config_commits": 0,
+        "tabs": 5,
+        "previews": 28
+      },
+      "idle": [
+        {
+          "requested_state": "visible",
+          "tk_state": "normal",
+          "wall_seconds": 5.010059443000046,
+          "cpu_seconds": 0.01062481999999998,
+          "cpu_percent_one_core": 0.21206973930907674,
+          "rss_start_bytes": 37163008,
+          "rss_end_bytes": 37163008,
+          "config_commits": 0
+        },
+        {
+          "requested_state": "withdrawn",
+          "tk_state": "withdrawn",
+          "wall_seconds": 5.011936032999984,
+          "cpu_seconds": 0.011647816000000033,
+          "cpu_percent_one_core": 0.23240152953484575,
+          "rss_start_bytes": 37171200,
+          "rss_end_bytes": 37171200,
+          "config_commits": 0
+        }
+      ],
+      "slider_burst": {
+        "events": 100,
+        "event_interval_ms": 5,
+        "wall_seconds": 2.3369718139999804,
+        "cpu_seconds": 0.03897602099999997,
+        "config_commits": 25,
+        "final_config": "scale=3.0\ncrosshair=dots/osupink.png\n"
+      },
+      "environment": {
+        "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+        "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+        "tk": 9.0,
+        "pillow": "12.3.0",
+        "psutil": "7.2.2",
+        "logical_cpus": 5,
+        "display": ":99",
+        "display_description": "Xvfb1280x900x24, no window manager",
+        "hidden_state": "withdrawn, not Windows minimized",
+        "source_sha256": "ed051fff73b3143418fcd51f33b6b1ca3786a99a655f6cc48a78c26db21c71b1",
+        "source": "/workspace/Auroras-crosshair-overlay/CrosshairGUI/gui.py",
+        "assets": "/workspace/Auroras-crosshair-overlay/AuroraCrosshairDX/resources/crosshairs",
+        "cpu_scope": "Python process only; excludes display server CPU",
+        "cpu_model": "unavailable",
+        "resource_layout": "symlink",
+        "adjacent_python_sha256": {
+          "gui.py": "ed051fff73b3143418fcd51f33b6b1ca3786a99a655f6cc48a78c26db21c71b1",
+          "overlay_config.py": "01f5cc9d6681e6c2f0d596ffe5ed8c42c3e17f1d8f0b8fd4cca187f5890e5e9c"
+        }
+      }
+    },
+    {
+      "startup": {
+        "wall_seconds": 0.11008695999998963,
+        "cpu_seconds": 0.06507644700000001,
+        "rss_bytes": 37167104,
+        "config_commits": 0,
+        "tabs": 5,
+        "previews": 28
+      },
+      "idle": [
+        {
+          "requested_state": "visible",
+          "tk_state": "normal",
+          "wall_seconds": 5.016119404000165,
+          "cpu_seconds": 0.012176867000000036,
+          "cpu_percent_one_core": 0.24275472769426992,
+          "rss_start_bytes": 37167104,
+          "rss_end_bytes": 37167104,
+          "config_commits": 0
+        },
+        {
+          "requested_state": "withdrawn",
+          "tk_state": "withdrawn",
+          "wall_seconds": 5.011183105999862,
+          "cpu_seconds": 0.009688664999999985,
+          "cpu_percent_one_core": 0.19334086971198078,
+          "rss_start_bytes": 37175296,
+          "rss_end_bytes": 37175296,
+          "config_commits": 0
+        }
+      ],
+      "slider_burst": {
+        "events": 100,
+        "event_interval_ms": 5,
+        "wall_seconds": 2.3326906600000257,
+        "cpu_seconds": 0.03563582100000001,
+        "config_commits": 25,
+        "final_config": "scale=3.0\ncrosshair=dots/osupink.png\n"
+      },
+      "environment": {
+        "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+        "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+        "tk": 9.0,
+        "pillow": "12.3.0",
+        "psutil": "7.2.2",
+        "logical_cpus": 5,
+        "display": ":99",
+        "display_description": "Xvfb1280x900x24, no window manager",
+        "hidden_state": "withdrawn, not Windows minimized",
+        "source_sha256": "ed051fff73b3143418fcd51f33b6b1ca3786a99a655f6cc48a78c26db21c71b1",
+        "source": "/workspace/Auroras-crosshair-overlay/CrosshairGUI/gui.py",
+        "assets": "/workspace/Auroras-crosshair-overlay/AuroraCrosshairDX/resources/crosshairs",
+        "cpu_scope": "Python process only; excludes display server CPU",
+        "cpu_model": "unavailable",
+        "resource_layout": "symlink",
+        "adjacent_python_sha256": {
+          "gui.py": "ed051fff73b3143418fcd51f33b6b1ca3786a99a655f6cc48a78c26db21c71b1",
+          "overlay_config.py": "01f5cc9d6681e6c2f0d596ffe5ed8c42c3e17f1d8f0b8fd4cca187f5890e5e9c"
+        }
+      }
+    }
+  ],
+  "unavailable_metrics": [
+    "native Windows overlay CPU/memory/GPU",
+    "game FPS and frame times",
+    "reliable input latency",
+    "extended gameplay stability"
+  ],
+  "summary": {
+    "startup_wall_seconds_median": 0.11315741799990064,
+    "startup_rss_bytes_median": 37163008,
+    "visible_idle_cpu_percent_one_core_median": 0.24275472769426992,
+    "withdrawn_idle_cpu_percent_one_core_median": 0.22639758853511718,
+    "slider_config_commits": [
+      25,
+      25,
+      25
+    ]
+  }
+}

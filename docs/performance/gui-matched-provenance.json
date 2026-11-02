@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "baseline_commit": "18c9dd3e8c7b226ce5da1ec25eacb1a2b2ac5c97",
+  "candidate_gui_stable_commit": "0d108f6",
+  "harness_sha256": "94aad6973422b88aad441303408c641b319f811b1068623c8d7e3df85c860b18",
+  "asset_manifest": {
+    "png_count": 390,
+    "relative_paths_and_contents_sha256": "bf751bd56b98cec1b0d0636e25aead119e2614d52e1e121b08261f52c431df3c"
+  },
+  "candidate_python_sha256": {
+    "gui.py": "ed051fff73b3143418fcd51f33b6b1ca3786a99a655f6cc48a78c26db21c71b1",
+    "overlay_config.py": "01f5cc9d6681e6c2f0d596ffe5ed8c42c3e17f1d8f0b8fd4cca187f5890e5e9c"
+  },
+  "baseline_python_sha256": {
+    "gui.py": "8e353b703662792ec44665dfc88667064dde9b633639a313b62f7e3934a72a78"
+  },
+  "cpu_model": "AMD EPYC 7763 64-Core Processor",
+  "capture_commands": [
+    "PATH=/workspace/.cloud-environment/tools/usr/bin:$PATH xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' bash /workspace/.cloud-environment/performance/capture_pair.sh",
+    "python tools/performance/measure_gui.py --source /workspace/.cloud-environment/performance/baseline-source/gui.py --run-id linux-gui-baseline-matched-01 --display-description 'Xvfb1280x900x24, no window manager' --output docs/performance/gui-baseline-matched.json",
+    "python tools/performance/measure_gui.py --source CrosshairGUI/gui.py --run-id linux-gui-optimized-01 --display-description 'Xvfb1280x900x24, no window manager' --output docs/performance/gui-optimized.json"
+  ],
+  "python_executable": "/workspace/.cloud-environment/venv/bin/python",
+  "raw_results": {
+    "gui-baseline-matched.json": {
+      "sha256": "3d4dee64ca13bc9d0fadbbcfdc30ac5a9f802d759bde306c838798066af1e079",
+      "capture_completed_utc": "2026-11-02T13:18:53.954795+00:00"
+    },
+    "gui-optimized.json": {
+      "sha256": "cdb6cf862e0996c882f55d665d23ab363c9f0300835d3239cac510380c945520",
+      "capture_completed_utc": "2026-11-02T13:19:35.004853+00:00"
+    }
+  }
+}

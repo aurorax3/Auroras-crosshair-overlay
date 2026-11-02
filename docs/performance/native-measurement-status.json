@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "scope": "Windows overlay and game measurements",
+  "status": "not_measured",
+  "reason": "The available execution host is Linux/Xvfb, without a Windows gaming session or native GPU/game capture.",
+  "baseline": {
+    "idle_cpu_percent": null,
+    "working_set_bytes": null,
+    "private_bytes": null,
+    "gpu_engine_utilization_percent": null,
+    "average_game_fps": null,
+    "one_percent_low_game_fps": null,
+    "frame_time_distribution_ms": null,
+    "input_latency_ms": null,
+    "extended_gameplay_stability": null
+  },
+  "candidate": {
+    "idle_cpu_percent": null,
+    "working_set_bytes": null,
+    "private_bytes": null,
+    "gpu_engine_utilization_percent": null,
+    "average_game_fps": null,
+    "one_percent_low_game_fps": null,
+    "frame_time_distribution_ms": null,
+    "input_latency_ms": null,
+    "extended_gameplay_stability": null
+  },
+  "capture_tools": {
+    "process": "tools/performance/capture_process.ps1",
+    "frame_analysis": "tools/performance/analyze_frames.py",
+    "windows_capture_execution": "unverified on this Linux host"
+  },
+  "interpretation": "Linux Python controller measurements and static operation counts cannot establish game FPS, GPU cost, Windows composition behavior or input latency. No zero-impact claim is made."
+}
