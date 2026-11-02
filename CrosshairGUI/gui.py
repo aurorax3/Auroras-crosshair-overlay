@@ -8,12 +8,20 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import os
 import subprocess
-import threading
 import time
 from pathlib import Path
 import psutil
 from PIL import Image, ImageTk
-import io
+import logging
+import sys
+
+# Also support importlib-based launchers without changing their sys.path.
+GUI_DIR = Path(__file__).resolve().parent
+if str(GUI_DIR) not in sys.path:
+    sys.path.insert(0, str(GUI_DIR))
+from overlay_config import Settings, read_settings, valid_scale, write_settings
+
+LOGGER = logging.getLogger(__name__)
 
 class CrosshairController:
     def __init__(self, root):
@@ -22,21 +30,26 @@ class CrosshairController:
         self.root.geometry("1000x700")
         self.root.resizable(False, False)
         
-        # Config path
-        self.config_path = Path.home() / "Documents" / "Crosshair overlay" / "overlay_config.txt"
+        # Keep the legacy config location unless explicitly overridden.
+        base = os.environ.get("AURORA_OVERLAY_HOME")
+        self.overlay_home = Path(base) if base else Path.home() / "Documents" / "Crosshair overlay"
+        self.config_path = self.overlay_home / "overlay_config.txt"
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Resource path
-        self.resource_path = Path.home() / "Documents" / "Crosshair overlay" / "AuroraCrosshairDX" / "resources" / "crosshairs"
-        
-        # Overlay exe path
-        self.overlay_exe = Path.home() / "Documents" / "Crosshair overlay" / "AuroraCrosshairDX" / "x64" / "Release" / "AuroraCrosshairDX.exe"
-        
+        self.resource_path = self.overlay_home / "AuroraCrosshairDX" / "resources" / "crosshairs"
+        self.overlay_exe = self.overlay_home / "AuroraCrosshairDX" / "x64" / "Release" / "AuroraCrosshairDX.exe"
+        try:
+            settings = read_settings(self.config_path)
+        except (OSError, UnicodeError) as error:
+            LOGGER.warning("Cannot read overlay configuration: %s", error)
+            settings = Settings()
+        self._saved_settings = settings if self.config_path.exists() else None
+        self._save_after_id = None
+        self._last_config_error = None
+        self._closed = False
         self.overlay_running = False
-        self.current_scale = 1.0
-        self.current_crosshair = "osupink.png"
-        self.current_folder = "dots"
-        
+        self.current_scale = settings.scale
+        self.current_folder, _, self.current_crosshair = settings.crosshair.rpartition("/")
+
         # Store references to buttons for easy selection tracking
         self.crosshair_buttons = {}
         self.selected_button = None
@@ -44,6 +57,7 @@ class CrosshairController:
         self.setup_ui()
         self.check_overlay_status()
         self.load_crosshairs()
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         
     def setup_ui(self):
         # Title
@@ -69,7 +83,7 @@ class CrosshairController:
         
         ttk.Label(slider_frame, text="50%").pack(side=tk.LEFT)
         
-        self.scale_var = tk.DoubleVar(value=1.0)
+        self.scale_var = tk.DoubleVar(value=self.current_scale)
         self.scale_slider = ttk.Scale(
             slider_frame,
             from_=0.5,
@@ -79,10 +93,11 @@ class CrosshairController:
             command=self.on_scale_changed
         )
         self.scale_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        self.scale_slider.bind("<ButtonRelease-1>", lambda event: self.save_config())
         
         ttk.Label(slider_frame, text="300%").pack(side=tk.LEFT)
         
-        self.scale_label = ttk.Label(scale_frame, text="Scale: 100%", font=("Arial", 10, "bold"))
+        self.scale_label = ttk.Label(scale_frame, text=f"Scale: {int(self.current_scale * 100)}%", font=("Arial", 10, "bold"))
         self.scale_label.pack()
         
         # Crosshair selection frame with tabs
@@ -254,10 +269,16 @@ class CrosshairController:
             # Force update scroll region after all items loaded
             self.root.after(100, lambda: canvas.configure(scrollregion=canvas.bbox("all")))
         
-        # Set default selection to osupink in dots folder
-        if "dots/osupink.png" in self.crosshair_buttons:
-            self.select_crosshair("osupink.png", "dots")
-            
+        # Reopening the controller must not reset a running overlay's settings.
+        key = self._current_settings().crosshair
+        if key in self.crosshair_buttons:
+            self.selected_button = self.crosshair_buttons[key]
+            self.selected_button.config(bg="#4CAF50", fg="white")
+
+    def _current_settings(self):
+        crosshair = "/".join(part for part in (self.current_folder, self.current_crosshair) if part)
+        return Settings(self.current_scale, crosshair)
+
     def select_crosshair(self, crosshair, folder):
         """Handle crosshair selection"""
         # Deselect previous button
@@ -275,24 +296,48 @@ class CrosshairController:
         self.save_config()
         
     def on_scale_changed(self, value):
-        """Handle scale slider change"""
-        self.current_scale = float(value)
-        percentage = int(self.current_scale * 100)
-        self.scale_label.config(text=f"Scale: {percentage}%")
+        """Coalesce a drag to at most one config publication per 50 milliseconds."""
+        scale = valid_scale(value)
+        if scale is None:
+            return
+        self.current_scale = scale
+        self.scale_label.config(text=f"Scale: {int(self.current_scale * 100)}%")
+        if self._save_after_id is None:
+            self._save_after_id = self.root.after(50, self._flush_pending_config)
+
+    def _flush_pending_config(self):
+        self._save_after_id = None
         self.save_config()
-        
+
     def save_config(self):
-        """Save config to file that overlay reads"""
+        """Publish one complete change; unchanged state causes no disk operation."""
+        if self._save_after_id is not None:
+            self.root.after_cancel(self._save_after_id)
+            self._save_after_id = None
+        settings = self._current_settings()
+        if settings == self._saved_settings:
+            return True
         try:
-            # Construct full path: folder/filename
-            full_crosshair = f"{self.current_folder}/{self.current_crosshair}"
-            
-            with open(self.config_path, 'w', encoding='utf-8') as f:
-                f.write(f"scale={self.current_scale}\n")
-                f.write(f"crosshair={full_crosshair}\n")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to save config: {e}")
-            
+            write_settings(self.config_path, settings)
+        except (OSError, ValueError) as error:
+            message = f"Could not save settings: {error}"
+            self.status_label.config(text=message, foreground="red")
+            if message != self._last_config_error:
+                LOGGER.warning("%s", message)
+            self._last_config_error = message
+            return False
+        self._saved_settings = settings
+        self._last_config_error = None
+        return True
+
+    def on_close(self):
+        """Flush final settings and close the controller, leaving the overlay alive."""
+        if not self.save_config():
+            messagebox.showerror("Settings not saved", "Cannot save the final settings. Check the configuration folder and try again.")
+            return
+        self._closed = True
+        self.root.destroy()
+
     def check_overlay_status(self):
         """Check if overlay process is running"""
         try:
@@ -320,7 +365,8 @@ class CrosshairController:
         
         try:
             # Save current config before starting
-            self.save_config()
+            if not self.save_config():
+                return
             
             # Start overlay in background
             subprocess.Popen(str(self.overlay_exe))
