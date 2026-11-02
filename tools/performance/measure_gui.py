@@ -1,5 +1,6 @@
 """Compare real Tk controller workloads. Linux/Xvfb results are not game metrics."""
 import argparse
+from contextlib import contextmanager
 import importlib.util
 import hashlib
 import json
@@ -16,6 +17,24 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ASSETS = ROOT / 'AuroraCrosshairDX/resources/crosshairs'
+
+@contextmanager
+def isolated_controller_home(home):
+    """Override both original and candidate path selectors, restoring callers."""
+    docs = home / 'Documents/Crosshair overlay'
+    with patch.object(Path, 'home', return_value=home), patch.dict(os.environ, {'AURORA_OVERLAY_HOME': str(docs)}):
+        yield docs
+
+
+def asset_manifest(assets):
+    digest = hashlib.sha256()
+    paths = sorted(path for path in assets.rglob('*') if path.is_file() and path.suffix.lower() == '.png')
+    for path in paths:
+        digest.update(path.relative_to(assets).as_posix().encode('utf-8'))
+        digest.update(b'\0')
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return {'png_count': len(paths), 'relative_paths_and_contents_sha256': digest.hexdigest()}
+
 
 def trial(source, assets, seconds, display_description):
     import tkinter as tk
@@ -52,12 +71,17 @@ def trial(source, assets, seconds, display_description):
         callbacks = []
         def fail_dialog(title, msg, **kwargs):
             raise RuntimeError(f'{title}: {msg}')
-        with patch.object(Path, 'home', return_value=home), patch.object(messagebox, 'showerror', side_effect=fail_dialog):
+        with isolated_controller_home(home), patch.object(messagebox, 'showerror', side_effect=fail_dialog):
             wall = time.perf_counter()
             cpu = time.process_time()
             root = tk.Tk()
-            root.report_callback_exception = lambda *args: callbacks.append(str(args))
+            def callback_error(*args):
+                callbacks.append(str(args))
+                root.quit()
+            root.report_callback_exception = callback_error
             app = module.CrosshairController(root)
+            if app.config_path.resolve() != config.resolve():
+                raise RuntimeError('Controller ignored isolated configuration path')
             root.update()
             startup = {'wall_seconds': time.perf_counter()-wall, 'cpu_seconds': time.process_time()-cpu,
                        'rss_bytes': process.memory_info().rss, 'config_commits': len(commits),
@@ -141,21 +165,28 @@ def main():
     if args.output and args.output.exists():
         parser.error('output already exists; select a new run output')
     source_digest = hashlib.sha256(args.source.read_bytes()).hexdigest()
+    resources_digest = asset_manifest(args.assets)
     if args.trial:
         print(json.dumps(trial(args.source.resolve(), args.assets.resolve(), args.seconds, args.display_description)))
         return
     trials = []
     for index in range(args.trials):
-        child = subprocess.run([sys.executable, __file__, '--trial', '--source', str(args.source),
-                                '--seconds', str(args.seconds), '--assets', str(args.assets),
-                                '--run-id', args.run_id, '--display-description', args.display_description], text=True, capture_output=True)
+        try:
+            child = subprocess.run([sys.executable, __file__, '--trial', '--source', str(args.source),
+                                    '--seconds', str(args.seconds), '--assets', str(args.assets),
+                                    '--run-id', args.run_id, '--display-description', args.display_description],
+                                   text=True, capture_output=True, timeout=2 * args.seconds + 30)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f'Trial {index + 1} exceeded its bounded capture timeout') from None
         if child.returncode:
             raise RuntimeError(f'Trial {index + 1} failed: {child.stderr or child.stdout}')
         trials.append(json.loads(child.stdout))
         print(f'Completed trial {index+1}/{args.trials}', flush=True)
     if hashlib.sha256(args.source.read_bytes()).hexdigest() != source_digest:
         raise RuntimeError('Source changed during capture; discard this mixed run')
-    report = {'schema_version': 1, 'run_id': args.run_id, 'source_sha256': source_digest, 'source': str(args.source.resolve()), 'scenario': 'fresh process, warm up 300ms, visible idle, withdrawn idle, 100 slider callbacks at 5ms, settle 300ms',
+    if asset_manifest(args.assets) != resources_digest:
+        raise RuntimeError('Resource files changed during capture; discard this mixed run')
+    report = {'schema_version': 1, 'run_id': args.run_id, 'harness_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), 'source_sha256': source_digest, 'asset_manifest': resources_digest, 'source': str(args.source.resolve()), 'scenario': 'fresh process, warm up 300ms, visible idle, withdrawn idle, 100 slider callbacks at 5ms, settle 300ms',
               'trials': trials, 'unavailable_metrics': ['native Windows overlay CPU/memory/GPU', 'game FPS and frame times', 'reliable input latency', 'extended gameplay stability']}
     report['summary'] = {'startup_wall_seconds_median': statistics.median(t['startup']['wall_seconds'] for t in trials),
         'startup_rss_bytes_median': statistics.median(t['startup']['rss_bytes'] for t in trials),

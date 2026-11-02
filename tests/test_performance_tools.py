@@ -2,6 +2,7 @@
 import csv
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -12,6 +13,9 @@ TOOL = Path(__file__).resolve().parents[1] / 'tools/performance/analyze_frames.p
 SPEC = importlib.util.spec_from_file_location('analyze_frames', TOOL)
 frames = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(frames)
+GUI_SPEC = importlib.util.spec_from_file_location('measure_gui', TOOL.with_name('measure_gui.py'))
+gui_measurement = importlib.util.module_from_spec(GUI_SPEC)
+GUI_SPEC.loader.exec_module(gui_measurement)
 
 
 def row(interval, process=42, chain='0xA', dropped='0'):
@@ -57,6 +61,7 @@ class FrameAnalysisTests(unittest.TestCase):
         self.assertEqual(result['frame_count'], 2)
         self.assertEqual(result['counts']['rows_excluded_by_drop_policy'], 1)
         self.assertEqual(result['counts']['selected_stream_dropped_rows'], 1)
+        self.assertIn('not displayed cadence', result['warnings'][0])
         dropped = analyze(rows, dropped_column='Dropped', drop_policy='dropped')
         self.assertEqual(dropped['frame_count'], 1)
         self.assertEqual(dropped['average_fps'], 10)
@@ -76,6 +81,7 @@ class FrameAnalysisTests(unittest.TestCase):
     def test_skipped_invalid_intervals_are_reported(self):
         result = analyze([row(0), row('NaN'), row(10)], skip_invalid_intervals=True)
         self.assertEqual(result['counts']['rows_invalid_intervals'], 2)
+        self.assertIn('unknown elapsed time', result['warnings'][0])
         self.assertEqual(result['frame_count'], 1)
         self.assertEqual(result['average_fps'], 100)
 
@@ -149,6 +155,39 @@ class FrameAnalysisTests(unittest.TestCase):
                 source.write_text(data)
                 with self.subTest(data=data), self.assertRaisesRegex(ValueError, 'unique column'):
                     frames.read_csv(source, process_id=42, swapchain='0xa', interval_column='MsBetweenPresents')
+
+
+class GuiCaptureIsolationTests(unittest.TestCase):
+    def test_existing_overlay_override_is_isolated_and_restored(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            real_home = parent / 'existing-override'
+            real_home.mkdir()
+            sentinel = real_home / 'overlay_config.txt'
+            sentinel.write_text('scale=2.0\ncrosshair=keep.png\n')
+            with patch.dict(os.environ, {'AURORA_OVERLAY_HOME': str(real_home)}):
+                with self.assertRaisesRegex(RuntimeError, 'trial failure'):
+                    with gui_measurement.isolated_controller_home(parent / 'isolated') as docs:
+                        self.assertNotEqual(Path(os.environ['AURORA_OVERLAY_HOME']), real_home)
+                        self.assertEqual(Path(os.environ['AURORA_OVERLAY_HOME']), docs)
+                        self.assertEqual(Path.home(), parent / 'isolated')
+                        raise RuntimeError('trial failure')
+                self.assertEqual(os.environ['AURORA_OVERLAY_HOME'], str(real_home))
+            self.assertEqual(sentinel.read_text(), 'scale=2.0\ncrosshair=keep.png\n')
+
+    def test_asset_manifest_tracks_names_and_contents(self):
+        with tempfile.TemporaryDirectory() as directory:
+            assets = Path(directory)
+            (assets / 'a.png').write_bytes(b'first')
+            original = gui_measurement.asset_manifest(assets)
+            (assets / 'ignored.txt').write_bytes(b'non-image')
+            self.assertEqual(gui_measurement.asset_manifest(assets), original)
+            (assets / 'a.png').rename(assets / 'b.png')
+            renamed = gui_measurement.asset_manifest(assets)
+            self.assertNotEqual(renamed, original)
+            (assets / 'b.png').write_bytes(b'second')
+            self.assertNotEqual(gui_measurement.asset_manifest(assets), renamed)
 
 
 if __name__ == '__main__':

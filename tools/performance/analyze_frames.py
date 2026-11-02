@@ -119,6 +119,11 @@ def analyze_rows(rows, *, process_id, swapchain, interval_column,
             'one_percent_low_fps': '1000 / arithmetic mean of slowest ceil(N * 0.01) frame intervals',
             'percentiles': 'linear interpolation at (N - 1) * percentile (type 7)',
             'scope': 'Selected interval-column stream only; not input latency or proof of displayed FPS'},
+        'warnings': ([
+            'Dropped-frame filtering excludes those intervals from elapsed time; FPS is conditional on selected rows, not displayed cadence'
+        ] if counts['rows_excluded_by_drop_policy'] else []) + ([
+            'Invalid intervals were explicitly excluded; remaining metrics omit their unknown elapsed time'
+        ] if counts['rows_invalid_intervals'] else []),
         'sample_count_warning': 'Fewer than 100 frames; the slowest 1% contains only one frame' if frame_count < 100 else None,
         'unavailable_metrics': ['input latency', 'gameplay stability outside the capture', 'GPU utilization'],
     }

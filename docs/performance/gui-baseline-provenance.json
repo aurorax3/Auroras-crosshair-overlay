@@ -11,5 +11,9 @@
   "raw_result_sha256": "28769962aead98768f0f0a065d2177dd9495d49620682c70c20e1c195e5d38bf",
   "sample_design": "Three fresh processes; 300ms warmup; 5s visible idle; 5s withdrawn idle; 100 slider callbacks at 5ms; 300ms settle",
   "reusable_harness": "tools/performance/measure_gui.py preserves measured workload and adds portable CLI/provenance/validation",
-  "minimize_limitation": "No window manager in Xvfb; withdrawn is hidden, not a Windows minimized measurement"
+  "minimize_limitation": "No window manager in Xvfb; withdrawn is hidden, not a Windows minimized measurement",
+  "asset_manifest": {
+    "png_count": 390,
+    "relative_paths_and_contents_sha256": "bf751bd56b98cec1b0d0636e25aead119e2614d52e1e121b08261f52c431df3c"
+  }
 }
