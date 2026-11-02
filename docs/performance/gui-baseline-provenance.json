@@ -1,0 +1,15 @@
+{
+  "baseline_commit": "18c9dd3e8c7b226ce5da1ec25eacb1a2b2ac5c97",
+  "baseline_gui_sha256": "8e353b703662792ec44665dfc88667064dde9b633639a313b62f7e3934a72a78",
+  "cpu_model": "AMD EPYC 7763 64-Core Processor",
+  "kernel": "Linux 6.18.57 x86_64",
+  "measurement_scope": "Python process CPU time, RSS and actual config commits under Linux/Xvfb; excluded X server CPU; no Windows/game performance claims",
+  "command": "PATH=/workspace/.cloud-environment/tools/usr/bin:$PATH xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' /workspace/.cloud-environment/venv/bin/python /workspace/.cloud-environment/performance/measure_gui.py --source /workspace/.cloud-environment/performance/baseline-source/gui.py --output /workspace/.cloud-environment/performance/gui-baseline.json",
+  "run_id": "linux-gui-baseline-01",
+  "baseline_harness_sha256": "0b09399326117e0c47a268f61f1ea54c50fcd76af859ee3989b5b4c5fc03f3f8",
+  "raw_result": "gui-baseline.json",
+  "raw_result_sha256": "28769962aead98768f0f0a065d2177dd9495d49620682c70c20e1c195e5d38bf",
+  "sample_design": "Three fresh processes; 300ms warmup; 5s visible idle; 5s withdrawn idle; 100 slider callbacks at 5ms; 300ms settle",
+  "reusable_harness": "tools/performance/measure_gui.py preserves measured workload and adds portable CLI/provenance/validation",
+  "minimize_limitation": "No window manager in Xvfb; withdrawn is hidden, not a Windows minimized measurement"
+}
