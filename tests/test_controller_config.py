@@ -17,14 +17,22 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(parse_settings("scale=0.1"), Settings(0.5))
         self.assertEqual(valid_crosshair(r"crosses\nested\a.png"), "crosses/nested/a.png")
 
-    def test_invalid_fields_preserve_last_good_and_valid_fields_apply(self):
+    def test_invalid_transactions_preserve_last_good(self):
         old = Settings(1.5, "dots/a.png")
         for scale in ("nan", "inf", "-inf", "nonsense", ""):
             self.assertEqual(parse_settings(f"scale={scale}\ncrosshair=../evil.png", old), old)
-        for path in ("../x.png", "/x.png", "C:/x.png", "a//b.png", "a/./b.png", "a/../b.png", "a\x00b", ""):
+        for path in ("../x.png", "/x.png", "C:/x.png", "a//b.png", "a/./b.png", "a/../b.png", "a\x00b", "a?.png", "folder./a.png", "folder /a.png", ""):
             self.assertIsNone(valid_crosshair(path), path)
-        self.assertEqual(parse_settings("scale=2\ncrosshair=../x.png", old), Settings(2, old.crosshair))
-        self.assertEqual(parse_settings("scale=nan\nscale=2\nscale=invalid", old), Settings(2, old.crosshair))
+        self.assertEqual(parse_settings("scale=2\ncrosshair=../x.png", old), old)
+        self.assertEqual(parse_settings("scale=nan\nscale=2\nscale=invalid", old), old)
+
+    def test_partial_updates_comments_unknown_keys_and_duplicates(self):
+        old = Settings(1.5, "dots/a.png")
+        self.assertEqual(parse_settings("# comment\r\nscale=2\r\nunknown=value", old), Settings(2, old.crosshair))
+        self.assertEqual(parse_settings("crosshair=crosses/b.png", old), Settings(old.scale, "crosses/b.png"))
+        self.assertEqual(parse_settings("scale=2\nscale=2", old), old)
+        self.assertEqual(parse_settings("scale=2\ngarbage", old), old)
+        self.assertEqual(parse_settings("; comment\n", old), old)
 
     def test_atomic_round_trip_and_missing_default(self):
         with tempfile.TemporaryDirectory() as directory:

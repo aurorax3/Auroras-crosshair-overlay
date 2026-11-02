@@ -15,9 +15,10 @@ class Settings:
 def valid_crosshair(value):
     """Return a normalized resource-relative name, or None for an unsafe name."""
     value = value.replace("\\", "/")
-    if (not value or len(value) > 255 or value.startswith("/") or ":" in value
+    if (not value or len(value) > 4096 or value.startswith("/") or any(char in value for char in '<>"|?*:')
             or any(ord(char) < 32 for char in value)
-            or any(part in ("", ".", "..") for part in value.split("/"))):
+            or any(part in ("", ".", "..") or len(part) > 255 or part.endswith((".", " "))
+                   for part in value.split("/"))):
         return None
     return value
 
@@ -33,21 +34,32 @@ def valid_scale(value):
 
 
 def parse_settings(text, previous=Settings()):
-    """Invalid individual fields leave their previous valid values intact."""
+    """Apply valid partial updates; reject ambiguous or malformed transactions."""
     scale, crosshair = previous.scale, previous.crosshair
+    seen = set()
     for line in text.lstrip("\ufeff").splitlines():
+        line = line.strip()
+        if not line or line.startswith(("#", ";")):
+            continue
         key, separator, value = line.partition("=")
         if not separator:
+            return previous
+        key, value = key.strip(), value.strip()
+        if key not in ("scale", "crosshair"):
             continue
-        value = value.strip()
-        if key.strip() == "scale":
+        if key in seen:
+            return previous
+        seen.add(key)
+        if key == "scale":
             candidate = valid_scale(value)
-            if candidate is not None:
-                scale = candidate
-        elif key.strip() == "crosshair":
+            if candidate is None:
+                return previous
+            scale = candidate
+        else:
             candidate = valid_crosshair(value)
-            if candidate is not None:
-                crosshair = candidate
+            if candidate is None:
+                return previous
+            crosshair = candidate
     return Settings(scale, crosshair)
 
 

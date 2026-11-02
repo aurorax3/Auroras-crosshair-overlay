@@ -65,6 +65,46 @@ class ControllerTests(unittest.TestCase):
             self.root.update()
             time.sleep(0.005)
 
+    def test_categories_load_once_and_nested_paths_are_selectable(self):
+        with patch.object(gui.Image, "open", wraps=Image.open) as decode:
+            app = self.make_app()
+            self.assertEqual(set(app.tabs), {"dots", "crosses", "circles"})
+            self.assertEqual(app._loaded_categories, {"dots"})
+            self.assertEqual(decode.call_count, 2)
+            self.assertNotIn("crosses/nested/reticle.png", app.crosshair_buttons)
+            app.notebook.select(app.tabs["crosses"])
+            self.pump()
+            key = "crosses/nested/reticle.png"
+            self.assertIn(key, app.crosshair_buttons)
+            self.assertEqual(decode.call_count, 3)
+            app.crosshair_buttons[key].invoke()
+            self.assertEqual(read_settings(app.config_path).crosshair, key)
+            app.notebook.select(app.tabs["dots"])
+            self.pump()
+            app.notebook.select(app.tabs["crosses"])
+            self.pump()
+            self.assertEqual(decode.call_count, 3)
+            for canvas in app._category_canvases.values():
+                actual = tuple(map(int, canvas.cget("scrollregion").split()))
+                self.assertEqual(actual, canvas.bbox("all"))
+
+    def test_saved_nested_selection_opens_matching_category(self):
+        initial = Settings(1.25, "crosses/nested/reticle.png")
+        write_settings(self.base / "overlay_config.txt", initial)
+        app = self.make_app()
+        self.assertEqual(app._loaded_categories, {"crosses"})
+        self.assertIs(app.selected_button, app.crosshair_buttons[initial.crosshair])
+        self.assertEqual(app._current_settings(), initial)
+
+    def test_bad_thumbnail_remains_selectable_without_breaking_other_assets(self):
+        (self.resources / "dots/broken.png").write_bytes(b"not a PNG")
+        with self.assertLogs(gui.LOGGER, level="WARNING") as log:
+            app = self.make_app()
+        self.assertEqual(len(log.output), 1)
+        app.crosshair_buttons["dots/broken.png"].invoke()
+        self.assertEqual(read_settings(app.config_path).crosshair, "dots/broken.png")
+        self.assertTrue(app.crosshair_buttons["dots/osupink.png"].cget("image"))
+
     def test_reopen_preserves_config_without_rewrite(self):
         config = self.base / "overlay_config.txt"
         initial = Settings(1.75, "dots/other.png")

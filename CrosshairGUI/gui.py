@@ -19,7 +19,7 @@ import sys
 GUI_DIR = Path(__file__).resolve().parent
 if str(GUI_DIR) not in sys.path:
     sys.path.insert(0, str(GUI_DIR))
-from overlay_config import Settings, read_settings, valid_scale, write_settings
+from overlay_config import Settings, read_settings, valid_crosshair, valid_scale, write_settings
 
 LOGGER = logging.getLogger(__name__)
 
@@ -35,8 +35,15 @@ class CrosshairController:
         self.overlay_home = Path(base) if base else Path.home() / "Documents" / "Crosshair overlay"
         self.config_path = self.overlay_home / "overlay_config.txt"
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        self.resource_path = self.overlay_home / "AuroraCrosshairDX" / "resources" / "crosshairs"
-        self.overlay_exe = self.overlay_home / "AuroraCrosshairDX" / "x64" / "Release" / "AuroraCrosshairDX.exe"
+        project = GUI_DIR.parent
+        resource_candidates = (self.overlay_home / "AuroraCrosshairDX/resources/crosshairs",
+                               project / "AuroraCrosshairDX/resources/crosshairs")
+        self.resource_path = next((path for path in resource_candidates if path.is_dir()), resource_candidates[0])
+        self._exe_candidates = (self.overlay_home / "AuroraCrosshairDX/x64/Release/AuroraCrosshairDX.exe",
+                                self.overlay_home / "x64/Release/AuroraCrosshairDX.exe",
+                                project / "AuroraCrosshairDX/x64/Release/AuroraCrosshairDX.exe",
+                                project / "x64/Release/AuroraCrosshairDX.exe")
+        self.overlay_exe = next((path for path in self._exe_candidates if path.is_file()), self._exe_candidates[0])
         try:
             settings = read_settings(self.config_path)
         except (OSError, UnicodeError) as error:
@@ -125,155 +132,103 @@ class CrosshairController:
         refresh_btn.pack(side=tk.LEFT, padx=5)
         
     def load_crosshairs(self):
-        """Load crosshair folders as tabs with image thumbnails for each crosshair"""
-        if not self.resource_path.exists():
-            messagebox.showerror("Error", f"Crosshairs folder not found at:\n{self.resource_path}")
+        """Index resource names once; decode previews only for a visited tab."""
+        self._category_files = {}
+        self._loaded_categories = set()
+        self._category_canvases = {}
+        self._thumbnail_errors = 0
+        if not self.resource_path.is_dir():
+            self.status_label.config(text=f"Crosshairs folder not found: {self.resource_path}", foreground="red")
             return
-        
-        # Get all folders
-        folders = sorted([f for f in self.resource_path.iterdir() if f.is_dir()])
-        
-        if not folders:
-            messagebox.showerror("Error", "No crosshair folders found")
+        for folder in sorted(self.resource_path.iterdir()):
+            if folder.is_dir():
+                self._category_files[folder.name] = sorted(path for path in folder.rglob("*")
+                                                         if path.is_file() and path.suffix.lower() == ".png")
+        root_images = sorted(path for path in self.resource_path.iterdir()
+                             if path.is_file() and path.suffix.lower() == ".png")
+        if root_images:
+            self._category_files[""] = root_images
+        for category in self._category_files:
+            frame = ttk.Frame(self.notebook)
+            self.notebook.add(frame, text=category.capitalize() or "Root")
+            self.tabs[category] = frame
+        if not self.tabs:
+            self.status_label.config(text="No crosshair categories found", foreground="red")
             return
-        
-        # Create tab for each folder
-        for folder in folders:
-            folder_name = folder.name
-            
-            # Create frame for this tab
-            tab_frame = ttk.Frame(self.notebook)
-            self.notebook.add(tab_frame, text=folder_name.capitalize())
-            self.tabs[folder_name] = tab_frame
-            
-            # Get crosshairs in this folder
-            crosshairs = sorted([f.name for f in folder.glob("*.png")])
-            
-            if not crosshairs:
-                label = ttk.Label(tab_frame, text=f"No crosshairs in {folder_name}", font=("Arial", 10))
-                label.pack(padx=10, pady=10)
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+        category = self.current_folder.split("/", 1)[0]
+        if category not in self.tabs:
+            category = "dots" if "dots" in self.tabs else next(iter(self.tabs))
+        self.notebook.select(self.tabs[category])
+        self._load_category(category)
+
+    def _on_tab_changed(self, event=None):
+        selected = self.notebook.select()
+        for category, frame in self.tabs.items():
+            if str(frame) == selected:
+                self._load_category(category)
+                return
+
+    def _load_category(self, category):
+        if category in self._loaded_categories:
+            return
+        self._loaded_categories.add(category)
+        frame = self.tabs[category]
+        canvas = tk.Canvas(frame, bg="white", highlightthickness=0)
+        self._category_canvases[category] = canvas
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+        content = ttk.Frame(canvas)
+        content.images = []
+        window = canvas.create_window((0, 0), window=content, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        # Bind each callback to its own widgets; never recursively pump Tk here.
+        content.bind("<Configure>", lambda event, c=canvas: c.configure(scrollregion=c.bbox("all")))
+        canvas.bind("<Configure>", lambda event, c=canvas, w=window: c.itemconfigure(w, width=event.width))
+
+        def on_mousewheel(event, c=canvas):
+            units = int(-event.delta / 120) if event.delta else (1 if event.num == 5 else -1)
+            c.yview_scroll(units, "units")
+
+        for widget in (canvas, content):
+            widget.bind("<MouseWheel>", on_mousewheel)
+            widget.bind("<Button-4>", on_mousewheel)
+            widget.bind("<Button-5>", on_mousewheel)
+        for column in range(10):
+            content.grid_columnconfigure(column, weight=1)
+        for index, path in enumerate(self._category_files[category]):
+            relative = path.relative_to(self.resource_path).as_posix()
+            if valid_crosshair(relative) is None:
+                LOGGER.warning("Ignoring unsupported crosshair filename: %s", relative)
                 continue
-            
-            # Create a scrollable frame for buttons with images
-            canvas = tk.Canvas(tab_frame, bg="white", highlightthickness=0)
-            scrollbar = ttk.Scrollbar(tab_frame, orient="vertical", command=canvas.yview)
-            scrollable_frame = ttk.Frame(canvas)
-            
-            def on_frame_configure(event):
-                # Update scroll region to actual content size
-                canvas.update_idletasks()
-                canvas.configure(scrollregion=canvas.bbox("all"))
-                # Make scrollable frame width match canvas width
-                canvas_width = canvas.winfo_width()
-                if canvas_width > 1:
-                    scrollable_frame.config(width=canvas_width)
-            
-            scrollable_frame.bind("<Configure>", on_frame_configure)
-            
-            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-            canvas.configure(yscrollcommand=scrollbar.set)
-            
-            # Enable mouse wheel scrolling for this canvas
-            def on_mousewheel(event, c=canvas):
-                c.yview_scroll(int(-1*(event.delta/120)), "units")
-            
-            canvas.bind("<MouseWheel>", on_mousewheel)
-            scrollable_frame.bind("<MouseWheel>", on_mousewheel)
-            
-            # Create grid layout for crosshairs (10 columns)
-            grid_row = 0
-            grid_col = 0
-            columns = 10
-            
-            # Configure grid columns to expand equally
-            for i in range(columns):
-                scrollable_frame.grid_columnconfigure(i, weight=1)
-            
-            # Create button for each crosshair with image preview
-            for crosshair in crosshairs:
-                crosshair_path = folder / crosshair
-                
-                # Create frame for button content
-                btn_frame = tk.Frame(scrollable_frame, bg="white", relief=tk.FLAT, bd=1)
-                btn_frame.grid(row=grid_row, column=grid_col, padx=3, pady=3, sticky="nsew")
-                
-                # Try to load and display image thumbnail
-                try:
-                    img = Image.open(crosshair_path)
-                    # Resize to thumbnail (64x64)
-                    img.thumbnail((64, 64), Image.Resampling.LANCZOS)
-                    
-                    # Convert to PhotoImage
-                    photo = ImageTk.PhotoImage(img)
-                    
-                    # Store reference to prevent garbage collection
-                    if not hasattr(scrollable_frame, 'images'):
-                        scrollable_frame.images = []
-                    scrollable_frame.images.append(photo)
-                    
-                    # Create button with image
-                    btn = tk.Button(
-                        btn_frame,
-                        image=photo,
-                        text=crosshair.replace(".png", ""),
-                        compound="top",
-                        command=lambda ch=crosshair, fn=folder_name: self.select_crosshair(ch, fn),
-                        relief=tk.FLAT,
-                        bg="#e0e0e0",
-                        activebackground="#b0b0b0",
-                        padx=8,
-                        pady=8,
-                        width=14,
-                        wraplength=85,
-                        font=("Arial", 7)
-                    )
-                    btn.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
-                    btn.bind("<MouseWheel>", on_mousewheel)
-                    btn_frame.bind("<MouseWheel>", on_mousewheel)
-                    
-                except Exception as e:
-                    # Fallback: text only button if image fails to load
-                    btn = tk.Button(
-                        btn_frame,
-                        text=crosshair.replace(".png", ""),
-                        command=lambda ch=crosshair, fn=folder_name: self.select_crosshair(ch, fn),
-                        relief=tk.FLAT,
-                        bg="#e0e0e0",
-                        activebackground="#b0b0b0",
-                        padx=8,
-                        pady=8,
-                        width=14,
-                        wraplength=85,
-                        font=("Arial", 7)
-                    )
-                    btn.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
-                    btn.bind("<MouseWheel>", on_mousewheel)
-                    btn_frame.bind("<MouseWheel>", on_mousewheel)
-                
-                # Store button reference
-                key = f"{folder_name}/{crosshair}"
-                self.crosshair_buttons[key] = btn
-                
-                # Update grid position
-                grid_col += 1
-                if grid_col >= columns:
-                    grid_col = 0
-                    grid_row += 1
-            
-            canvas.pack(side="left", fill="both", expand=True)
-            scrollbar.pack(side="right", fill="y")
-            
-            # Make the canvas expand to fill available width
-            tab_frame.pack_propagate(False)
-            
-            # Force update scroll region after all items loaded
-            self.root.after(100, lambda: canvas.configure(scrollregion=canvas.bbox("all")))
-        
-        # Reopening the controller must not reset a running overlay's settings.
-        key = self._current_settings().crosshair
-        if key in self.crosshair_buttons:
-            self.selected_button = self.crosshair_buttons[key]
-            self.selected_button.config(bg="#4CAF50", fg="white")
+            folder, _, name = relative.rpartition("/")
+            photo = None
+            try:
+                with Image.open(path) as image:
+                    image.thumbnail((64, 64), Image.Resampling.LANCZOS)
+                    photo = ImageTk.PhotoImage(image, master=self.root)
+                content.images.append(photo)
+            except (OSError, ValueError, tk.TclError) as error:
+                self._thumbnail_errors += 1
+                if self._thumbnail_errors <= 5:
+                    LOGGER.warning("Cannot preview %s: %s", relative, error)
+                elif self._thumbnail_errors == 6:
+                    LOGGER.warning("Further thumbnail errors suppressed")
+            button = tk.Button(content, image=photo or "", text=name.rsplit(".", 1)[0],
+                               compound="top", command=lambda ch=name, fn=folder: self.select_crosshair(ch, fn),
+                               relief=tk.FLAT, bg="#e0e0e0", activebackground="#b0b0b0",
+                               padx=8, pady=8, width=85 if photo else 12,
+                               wraplength=85, font=("Arial", 7))
+            button.grid(row=index // 10, column=index % 10, padx=3, pady=3, sticky="nsew")
+            for event in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+                button.bind(event, on_mousewheel)
+            self.crosshair_buttons[relative] = button
+            if relative == self._current_settings().crosshair:
+                self.selected_button = button
+                button.config(bg="#4CAF50", fg="white")
+        if not self._category_files[category]:
+            ttk.Label(content, text=f"No crosshairs in {category}").grid()
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
     def _current_settings(self):
         crosshair = "/".join(part for part in (self.current_folder, self.current_crosshair) if part)
