@@ -53,6 +53,7 @@ void TestConfiguration()
         "scale=inf\ncrosshair=a.png\n", "scale=-inf\ncrosshair=a.png\n",
         "scale=1e1000\ncrosshair=a.png\n",
         "scale=1garbage\ncrosshair=a.png\n", "scale=++1\ncrosshair=a.png\n",
+        "scale=+-1\ncrosshair=a.png\n", "scale=-+1\ncrosshair=a.png\n",
         "scale=1\nscale=2\ncrosshair=a.png\n", "scale=1\ncrosshair=a.png\ncrosshair=b.png\n",
         "scale=1\nthis is broken\ncrosshair=a.png\n", "scale=1\n=c\ncrosshair=a.png\n",
         "scale=1\ncrosshair=../a.png\n", "scale=1\ncrosshair=a/../b.png\n",

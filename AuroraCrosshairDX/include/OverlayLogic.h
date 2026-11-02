@@ -146,8 +146,11 @@ inline bool ParseSettings(const std::string& bytes, Settings& output)
             if (sawScale)
                 return false;
             sawScale = true;
-            if (value.front() == '+')
+            if (value.front() == '+') {
                 value.remove_prefix(1);
+                if (!value.empty() && (value.front() == '+' || value.front() == '-'))
+                    return false;
+            }
             if (value.empty())
                 return false;
             double scale = 0.0;
