@@ -38,6 +38,7 @@ bool g_useFallback = false;  // Force use fallback pink crosshair
 bool g_redrawRequested = true;
 std::wstring g_configDirectory;
 std::wstring g_configPath;
+std::wstring g_configParentDirectory;
 
 std::wstring EnvironmentValue(const wchar_t* name)
 {
@@ -164,6 +165,19 @@ HANDLE WatchConfigurationDirectory()
 {
     return FindFirstChangeNotificationW(NativePath(g_configDirectory).c_str(), FALSE,
         FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE);
+}
+
+HANDLE WatchConfigurationParent()
+{
+    if (g_configParentDirectory.empty()) return INVALID_HANDLE_VALUE;
+    return FindFirstChangeNotificationW(NativePath(g_configParentDirectory).c_str(),
+        FALSE, FILE_NOTIFY_CHANGE_DIR_NAME);
+}
+
+void CloseDirectoryWatch(HANDLE& watch)
+{
+    if (watch != INVALID_HANDLE_VALUE) FindCloseChangeNotification(watch);
+    watch = INVALID_HANDLE_VALUE;
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -446,7 +460,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
         g_configDirectory = EnvironmentValue(L"USERPROFILE") + L"\\Documents\\Crosshair overlay";
     std::error_code pathError;
     auto absoluteHome = std::filesystem::absolute(g_configDirectory, pathError);
-    if (!pathError) g_configDirectory = absoluteHome.lexically_normal().wstring();
+    if (!pathError)
+    {
+        absoluteHome = absoluteHome.lexically_normal();
+        // Strip a trailing separator without stripping the root itself.
+        while (absoluteHome != absoluteHome.root_path() && absoluteHome.filename().empty())
+            absoluteHome = absoluteHome.parent_path();
+        g_configDirectory = absoluteHome.wstring();
+    }
+    auto parentDirectory = std::filesystem::path(g_configDirectory).parent_path();
+    if (parentDirectory != std::filesystem::path(g_configDirectory))
+        g_configParentDirectory = parentDirectory.wstring();
     g_configPath = (std::filesystem::path(g_configDirectory) / L"overlay_config.txt").wstring();
     g_resourceDirectory = FindResources();
     RefreshMonitorGeometry();
@@ -487,6 +511,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
 
     // Arm notifications before reading so startup changes cannot be lost.
     HANDLE directoryWatch = WatchConfigurationDirectory();
+    HANDLE parentWatch = WatchConfigurationParent();
+    const bool needsParentWatch = !g_configParentDirectory.empty();
     ConfigStamp configStamp;
     ConfigurationChanged(configStamp);
     bool configurationChanged = false;
@@ -538,33 +564,68 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
             RenderCrosshair();
         }
 
-        bool watching = directoryWatch != INVALID_HANDLE_VALUE;
-        DWORD timeout = watching ? INFINITE : 1000;
+        HANDLE waits[2];
+        DWORD waitCount = 0;
+        DWORD directoryIndex = MAXDWORD, parentIndex = MAXDWORD;
+        if (directoryWatch != INVALID_HANDLE_VALUE)
+        {
+            directoryIndex = waitCount;
+            waits[waitCount++] = directoryWatch;
+        }
+        if (parentWatch != INVALID_HANDLE_VALUE)
+        {
+            parentIndex = waitCount;
+            waits[waitCount++] = parentWatch;
+        }
+        bool notificationsComplete = directoryWatch != INVALID_HANDLE_VALUE &&
+            (!needsParentWatch || parentWatch != INVALID_HANDLE_VALUE);
+        DWORD timeout = notificationsComplete ? INFINITE : 1000;
         if (readPending)
         {
             ULONGLONG now = GetTickCount64();
             DWORD delay = nextRead > now ? static_cast<DWORD>(nextRead - now) : 0;
             timeout = std::min(timeout, delay);
         }
-        DWORD result = MsgWaitForMultipleObjectsEx(watching ? 1 : 0,
-            watching ? &directoryWatch : nullptr, timeout, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+        DWORD result = MsgWaitForMultipleObjectsEx(waitCount, waits, timeout,
+            QS_ALLINPUT, MWMO_INPUTAVAILABLE);
         bool inspectConfiguration = false;
-        if (watching && result == WAIT_OBJECT_0)
+        if (directoryIndex != MAXDWORD && result == WAIT_OBJECT_0 + directoryIndex)
         {
             // Rearm first: atomic rename and rapid consecutive writes must be seen.
-            if (!FindNextChangeNotification(directoryWatch))
-            {
-                FindCloseChangeNotification(directoryWatch);
-                directoryWatch = INVALID_HANDLE_VALUE;
-            }
+            if (!FindNextChangeNotification(directoryWatch)) CloseDirectoryWatch(directoryWatch);
             inspectConfiguration = true;
         }
-        else if (!watching && !readPending && result == WAIT_TIMEOUT)
+        else if (parentIndex != MAXDWORD && result == WAIT_OBJECT_0 + parentIndex)
         {
-            // Only when notifications are unavailable: one metadata check/second,
-            // with disk parsing gated on a changed timestamp or length.
+            // A moved directory can retain a perfectly valid contents watch on
+            // its old identity. Rebind to the configured path after parent name
+            // changes, including replacement/recreation of the whole directory.
+            if (!FindNextChangeNotification(parentWatch)) CloseDirectoryWatch(parentWatch);
+            CloseDirectoryWatch(directoryWatch);
             directoryWatch = WatchConfigurationDirectory();
-            inspectConfiguration = ConfigurationChanged(configStamp);
+            inspectConfiguration = true;
+        }
+        else if (!notificationsComplete && !readPending && result == WAIT_TIMEOUT)
+        {
+            // Degraded fallback only: one metadata check/second, never an idle
+            // redraw. Retry missing/unsupported watches without another thread.
+            bool recovered = false;
+            if (needsParentWatch && parentWatch == INVALID_HANDLE_VALUE)
+            {
+                parentWatch = WatchConfigurationParent();
+                if (parentWatch != INVALID_HANDLE_VALUE)
+                {
+                    CloseDirectoryWatch(directoryWatch);
+                    recovered = true;
+                }
+            }
+            if (directoryWatch == INVALID_HANDLE_VALUE)
+            {
+                directoryWatch = WatchConfigurationDirectory();
+                recovered = recovered || directoryWatch != INVALID_HANDLE_VALUE;
+            }
+            bool stampChanged = ConfigurationChanged(configStamp);
+            inspectConfiguration = recovered || stampChanged;
         }
         else if (result == WAIT_FAILED)
         {
@@ -582,8 +643,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
             nextRead = GetTickCount64() + 50;
         }
     }
-    if (directoryWatch != INVALID_HANDLE_VALUE)
-        FindCloseChangeNotification(directoryWatch);
+    CloseDirectoryWatch(directoryWatch);
+    CloseDirectoryWatch(parentWatch);
     if (IsWindow(g_hWnd)) DestroyWindow(g_hWnd);
     UnregisterClassW(L"AuroraCrosshair", hInstance);
 
