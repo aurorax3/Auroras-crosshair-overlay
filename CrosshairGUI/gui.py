@@ -54,6 +54,10 @@ class CrosshairController:
         self._last_config_error = None
         self._closed = False
         self.overlay_running = False
+        self._owned_process = None
+        self._attached_process = None
+        self._process_after_id = None
+        self._process_action = None
         self.current_scale = settings.scale
         self.current_folder, _, self.current_crosshair = settings.crosshair.rpartition("/")
 
@@ -235,13 +239,16 @@ class CrosshairController:
         return Settings(self.current_scale, crosshair)
 
     def select_crosshair(self, crosshair, folder):
-        """Handle crosshair selection"""
+        """Handle a safe resource-relative crosshair selection."""
+        key = "/".join(part for part in (folder, crosshair) if part)
+        if valid_crosshair(key) is None:
+            return
         # Deselect previous button
         if self.selected_button:
             self.selected_button.config(bg="#e0e0e0", fg="black")
         
         # Select new button
-        key = f"{folder}/{crosshair}"
+        key = "/".join(part for part in (folder, crosshair) if part)
         if key in self.crosshair_buttons:
             self.selected_button = self.crosshair_buttons[key]
             self.selected_button.config(bg="#4CAF50", fg="white")
@@ -288,80 +295,191 @@ class CrosshairController:
     def on_close(self):
         """Flush final settings and close the controller, leaving the overlay alive."""
         if not self.save_config():
-            messagebox.showerror("Settings not saved", "Cannot save the final settings. Check the configuration folder and try again.")
-            return
+            if not messagebox.askyesno("Settings not saved", "The final settings could not be saved. Close without saving?", parent=self.root):
+                return
         self._closed = True
+        if self._process_after_id is not None:
+            self.root.after_cancel(self._process_after_id)
+            self._process_after_id = None
         self.root.destroy()
 
+    def _is_expected_executable(self, filename):
+        if not filename:
+            return False
+        normalized = os.path.normcase(str(Path(filename).resolve()))
+        return any(normalized == os.path.normcase(str(path.resolve()))
+                   for path in (*self._exe_candidates, self.overlay_exe))
+
+    @staticmethod
+    def _process_alive(process):
+        poll = getattr(process, "poll", None)
+        if poll is not None:
+            return poll() is None
+        try:
+            return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return False
+
+    def _find_overlay_process(self):
+        # An owned Popen retains the real process handle, avoiding PID reuse races.
+        if self._owned_process is not None and self._process_alive(self._owned_process):
+            return self._owned_process
+        self._owned_process = None
+        if self._attached_process is not None:
+            try:
+                if self._process_alive(self._attached_process) and self._is_expected_executable(self._attached_process.exe()):
+                    return self._attached_process
+            except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+                pass
+            self._attached_process = None
+        # Attach only on an explicit status/start/stop action, never on an idle timer.
+        for process in psutil.process_iter(["name", "exe"]):
+            try:
+                if ((process.info.get("name") or "").lower() == "auroracrosshairdx.exe"
+                        and self._is_expected_executable(process.info.get("exe"))
+                        and self._process_alive(process)):
+                    self._attached_process = process
+                    return process
+            except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+                continue
+        return None
+
     def check_overlay_status(self):
-        """Check if overlay process is running"""
         try:
-            # Check if AuroraCrosshairDX.exe is running
-            for proc in psutil.process_iter(['name']):
-                if proc.info['name'] == 'AuroraCrosshairDX.exe':
-                    self.overlay_running = True
-                    self.status_label.config(text="Overlay: Running", foreground="green")
-                    return
-            
-            self.overlay_running = False
-            self.status_label.config(text="Overlay: Not running", foreground="red")
-        except Exception as e:
-            self.status_label.config(text=f"Error checking status: {e}", foreground="orange")
-            
+            process = self._find_overlay_process()
+            self.overlay_running = process is not None
+            self.status_label.config(text="Overlay: Running" if process else "Overlay: Not running",
+                                     foreground="green" if process else "red")
+            return process
+        except (psutil.Error, OSError) as error:
+            self.status_label.config(text=f"Cannot check overlay status: {error}", foreground="orange")
+            LOGGER.warning("Cannot check overlay status: %s", error)
+            return None
+
     def start_overlay(self):
-        """Start the overlay process"""
-        if self.overlay_running:
-            messagebox.showinfo("Info", "Overlay is already running")
+        if self._process_action is not None:
             return
-            
-        if not self.overlay_exe.exists():
-            messagebox.showerror("Error", f"Overlay executable not found at:\n{self.overlay_exe}")
+        if self.check_overlay_status() is not None:
             return
-        
+        if not self.overlay_exe.is_file():
+            messagebox.showerror("Overlay not found", f"Build the overlay first. Expected executable:\n{self.overlay_exe}")
+            return
+        if not self.save_config():
+            return
         try:
-            # Save current config before starting
-            if not self.save_config():
-                return
-            
-            # Start overlay in background
-            subprocess.Popen(str(self.overlay_exe))
-            
-            # Wait a moment and check status
-            time.sleep(1)
-            self.check_overlay_status()
-            
-            if self.overlay_running:
-                messagebox.showinfo("Success", "Overlay started successfully!")
-            else:
-                messagebox.showerror("Error", "Failed to start overlay")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to start overlay: {e}")
-            
+            self._owned_process = subprocess.Popen([str(self.overlay_exe)])
+        except OSError as error:
+            self.status_label.config(text=f"Cannot start overlay: {error}", foreground="red")
+            LOGGER.warning("Cannot start overlay: %s", error)
+            return
+        self._process_action = "starting"
+        self.status_label.config(text="Overlay: Starting", foreground="orange")
+        self._process_after_id = self.root.after(150, self._finish_start)
+
+    def _finish_start(self):
+        self._process_after_id = None
+        self._process_action = None
+        if self._owned_process is not None and self._process_alive(self._owned_process):
+            self.overlay_running = True
+            self.status_label.config(text="Overlay: Running", foreground="green")
+        else:
+            self.overlay_running = False
+            self.status_label.config(text="Overlay exited during startup", foreground="red")
+            LOGGER.warning("Overlay exited during startup")
+
+    @staticmethod
+    def _request_window_close(pid):
+        """Request normal WM_CLOSE only for the selected overlay's own window."""
+        if os.name != "nt":
+            return False
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+        user32.FindWindowW.restype = wintypes.HWND
+        user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+        user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+        user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        user32.PostMessageW.restype = wintypes.BOOL
+        window = user32.FindWindowW("AuroraCrosshair", None)
+        owner = wintypes.DWORD()
+        if window:
+            user32.GetWindowThreadProcessId(window, ctypes.byref(owner))
+            if owner.value == pid:
+                return bool(user32.PostMessageW(window, 0x0010, 0, 0))  # WM_CLOSE
+        return False
+
     def stop_overlay(self):
-        """Stop the overlay process"""
-        if not self.overlay_running:
-            messagebox.showinfo("Info", "Overlay is not running")
+        if self._process_action is not None:
             return
-        
+        process = self.check_overlay_status()
+        if process is None:
+            return
         try:
-            # Kill AuroraCrosshairDX.exe process
-            for proc in psutil.process_iter(['name']):
-                if proc.info['name'] == 'AuroraCrosshairDX.exe':
-                    proc.terminate()
-                    proc.wait(timeout=2)
-                    break
-            
-            time.sleep(0.5)
+            graceful = self._request_window_close(process.pid)
+            if not graceful:
+                process.terminate()
+        except (psutil.NoSuchProcess, ProcessLookupError):
             self.check_overlay_status()
-            messagebox.showinfo("Success", "Overlay stopped!")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to stop overlay: {e}")
+            return
+        except (psutil.Error, OSError) as error:
+            self.status_label.config(text=f"Cannot stop overlay: {error}", foreground="red")
+            LOGGER.warning("Cannot stop overlay: %s", error)
+            return
+        self._process_action = "stopping"
+        self._stopping_process = process
+        self._stop_stage = "closing" if graceful else "terminating"
+        self._stop_deadline = time.monotonic() + (2.0 if graceful else 1.0)
+        self.status_label.config(text="Overlay: Stopping", foreground="orange")
+        self._process_after_id = self.root.after(50, self._poll_stop)
+
+    def _poll_stop(self):
+        self._process_after_id = None
+        process = self._stopping_process
+        if not self._process_alive(process):
+            self._process_action = None
+            self._stopping_process = None
+            self.overlay_running = False
+            self._owned_process = None
+            self._attached_process = None
+            self.status_label.config(text="Overlay: Stopped", foreground="red")
+            return
+        if time.monotonic() >= self._stop_deadline:
+            try:
+                if self._stop_stage == "closing":
+                    process.terminate()
+                    self._stop_stage = "terminating"
+                elif self._stop_stage == "terminating":
+                    process.kill()
+                    self._stop_stage = "killing"
+                else:
+                    self._process_action = None
+                    self.status_label.config(text="Overlay did not stop; check its process", foreground="red")
+                    LOGGER.warning("Overlay did not stop after a bounded shutdown attempt")
+                    return
+            except (psutil.NoSuchProcess, ProcessLookupError):
+                pass
+            except (psutil.Error, OSError) as error:
+                self._process_action = None
+                self.status_label.config(text=f"Cannot stop overlay: {error}", foreground="red")
+                LOGGER.warning("Cannot stop overlay: %s", error)
+                return
+            self._stop_deadline = time.monotonic() + 1.0
+        self._process_after_id = self.root.after(50, self._poll_stop)
 
 def main():
+    logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
     root = tk.Tk()
-    app = CrosshairController(root)
+    try:
+        app = CrosshairController(root)
+    except (OSError, ValueError) as error:
+        LOGGER.error("Controller initialization failed: %s", error)
+        messagebox.showerror("Cannot initialize controller", str(error), parent=root)
+        root.destroy()
+        return 1
     root.mainloop()
+    return 0
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
 

@@ -19,9 +19,9 @@ class SettingsTests(unittest.TestCase):
 
     def test_invalid_transactions_preserve_last_good(self):
         old = Settings(1.5, "dots/a.png")
-        for scale in ("nan", "inf", "-inf", "nonsense", ""):
+        for scale in ("nan", "inf", "-inf", "nonsense", "", "1_0", "１.５", "0x1p0", "1\u00a0", "1e-9999", "1e9999"):
             self.assertEqual(parse_settings(f"scale={scale}\ncrosshair=../evil.png", old), old)
-        for path in ("../x.png", "/x.png", "C:/x.png", "a//b.png", "a/./b.png", "a/../b.png", "a\x00b", "a?.png", "folder./a.png", "folder /a.png", ""):
+        for path in ("../x.png", "/x.png", "C:/x.png", "a//b.png", "a/./b.png", "a/../b.png", "a\x00b", "a\x7fb.png", "a?.png", "folder./a.png", "folder /a.png", ""):
             self.assertIsNone(valid_crosshair(path), path)
         self.assertEqual(parse_settings("scale=2\ncrosshair=../x.png", old), old)
         self.assertEqual(parse_settings("scale=nan\nscale=2\nscale=invalid", old), old)
@@ -33,6 +33,9 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(parse_settings("scale=2\nscale=2", old), old)
         self.assertEqual(parse_settings("scale=2\ngarbage", old), old)
         self.assertEqual(parse_settings("; comment\n", old), old)
+        self.assertEqual(parse_settings("scale=+1.5e0\r\n", old), old)
+        self.assertEqual(parse_settings("scale=2\v", old), old)
+        self.assertEqual(parse_settings("scale=0e-9999", old), Settings(0.5, old.crosshair))
 
     def test_atomic_round_trip_and_missing_default(self):
         with tempfile.TemporaryDirectory() as directory:

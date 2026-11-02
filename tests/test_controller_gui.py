@@ -2,11 +2,12 @@
 import os
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import time
 import tkinter as tk
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from PIL import Image
 
@@ -45,7 +46,11 @@ class ControllerTests(unittest.TestCase):
         self.app = None
 
     def tearDown(self):
-        if self.root.winfo_exists():
+        try:
+            exists = self.root.winfo_exists()
+        except tk.TclError:
+            exists = False
+        if exists:
             for after in self.root.tk.call("after", "info"):
                 self.root.after_cancel(after)
             self.root.destroy()
@@ -104,6 +109,81 @@ class ControllerTests(unittest.TestCase):
         app.crosshair_buttons["dots/broken.png"].invoke()
         self.assertEqual(read_settings(app.config_path).crosshair, "dots/broken.png")
         self.assertTrue(app.crosshair_buttons["dots/osupink.png"].cget("image"))
+
+    def test_root_level_crosshair_selection_updates_button_and_config(self):
+        path = self.resources / "root.png"
+        Image.new("RGBA", (8, 8), (255, 255, 255, 255)).save(path)
+        app = self.make_app()
+        app.notebook.select(app.tabs[""])
+        self.pump()
+        button = app.crosshair_buttons["root.png"]
+        button.invoke()
+        self.assertIs(app.selected_button, button)
+        self.assertEqual(read_settings(app.config_path).crosshair, "root.png")
+
+    def test_close_flushes_pending_settings_and_leaves_overlay_child_alive(self):
+        app = self.make_app()
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        try:
+            app._owned_process = child
+            app.on_scale_changed("2.5")
+            app._process_after_id = self.root.after(10000, lambda: self.fail("Cancelled callback ran"))
+            app.on_close()
+            self.assertTrue(app._closed)
+            self.assertIsNone(app._save_after_id)
+            self.assertIsNone(app._process_after_id)
+            self.assertEqual(read_settings(app.config_path).scale, 2.5)
+            self.assertIsNone(child.poll())
+        finally:
+            child.terminate()
+            child.wait(timeout=2)
+
+    def test_start_and_stop_are_nonblocking_and_leave_no_idle_timer(self):
+        app = self.make_app()
+        process = Mock()
+        process.pid = 1234
+        process.poll.return_value = None
+        app.overlay_exe = Path(sys.executable)
+        with patch.object(gui.subprocess, "Popen", return_value=process), patch.object(gui.psutil, "process_iter", return_value=[]):
+            before = time.monotonic()
+            app.start_overlay()
+            self.assertLess(time.monotonic() - before, 0.1)
+            self.assertEqual(app._process_action, "starting")
+            self.pump(0.2)
+            self.assertTrue(app.overlay_running)
+            self.assertIsNone(app._process_after_id)
+            process.terminate.side_effect = lambda: setattr(process.poll, "return_value", 0)
+            with patch.object(app, "_request_window_close", return_value=False):
+                app.stop_overlay()
+                self.pump()
+            process.terminate.assert_called_once()
+            self.assertFalse(app.overlay_running)
+            self.assertIsNone(app._process_after_id)
+            self.assertIsNone(app._process_action)
+
+    def test_same_name_wrong_path_is_never_terminated(self):
+        app = self.make_app()
+        wrong = Mock()
+        wrong.info = {"name": "AuroraCrosshairDX.exe", "exe": str(self.home / "unrelated/AuroraCrosshairDX.exe")}
+        with patch.object(gui.psutil, "process_iter", return_value=[wrong]):
+            app.stop_overlay()
+        wrong.terminate.assert_not_called()
+        wrong.kill.assert_not_called()
+        self.assertFalse(app.overlay_running)
+
+    def test_attached_process_requires_full_path_and_live_identity(self):
+        app = self.make_app()
+        attached = Mock(spec=gui.psutil.Process)
+        attached.info = {"name": "AURORACROSSHAIRDX.EXE", "exe": str(app.overlay_exe)}
+        attached.is_running.return_value = True
+        attached.status.return_value = gui.psutil.STATUS_RUNNING
+        attached.exe.return_value = str(app.overlay_exe)
+        with patch.object(gui.psutil, "process_iter", return_value=[attached]):
+            self.assertIs(app.check_overlay_status(), attached)
+        attached.exe.return_value = str(self.home / "unrelated.exe")
+        with patch.object(gui.psutil, "process_iter", return_value=[]):
+            self.assertIsNone(app.check_overlay_status())
+        attached.terminate.assert_not_called()
 
     def test_reopen_preserves_config_without_rewrite(self):
         config = self.base / "overlay_config.txt"
