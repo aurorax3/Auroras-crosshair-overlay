@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 #include <tuple>
+#include <string>
 
 #pragma comment(lib, "windowscodecs.lib")
 
@@ -18,11 +19,73 @@ float g_scale = 1.0f;  // Scale multiplier (1.0 = 100%)
 wchar_t g_crosshairName[256] = L"osupink.png";  // Current crosshair filename
 bool g_textureLoaded = false;  // Track if texture successfully loaded
 bool g_useFallback = false;  // Force use fallback pink crosshair
+bool g_redrawRequested = true;
+std::wstring g_configDirectory;
+std::wstring g_configPath;
+
+std::wstring EnvironmentValue(const wchar_t* name)
+{
+    DWORD length = GetEnvironmentVariableW(name, nullptr, 0);
+    if (!length) return {};
+    std::wstring value(length, L'\0');
+    DWORD written = GetEnvironmentVariableW(name, value.data(), length);
+    if (!written || written >= length) return {};
+    value.resize(written);
+    return value;
+}
+
+struct ConfigStamp
+{
+    bool exists = false;
+    FILETIME modified{};
+    DWORD sizeHigh = 0, sizeLow = 0;
+};
+
+bool ConfigurationChanged(ConfigStamp& previous)
+{
+    WIN32_FILE_ATTRIBUTE_DATA info{};
+    ConfigStamp current;
+    current.exists = GetFileAttributesExW(g_configPath.c_str(), GetFileExInfoStandard, &info) != FALSE;
+    if (current.exists)
+    {
+        current.modified = info.ftLastWriteTime;
+        current.sizeHigh = info.nFileSizeHigh;
+        current.sizeLow = info.nFileSizeLow;
+    }
+    bool changed = current.exists != previous.exists ||
+        CompareFileTime(&current.modified, &previous.modified) != 0 ||
+        current.sizeHigh != previous.sizeHigh || current.sizeLow != previous.sizeLow;
+    previous = current;
+    return changed;
+}
+
+HANDLE WatchConfigurationDirectory()
+{
+    return FindFirstChangeNotificationW(g_configDirectory.c_str(), FALSE,
+        FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE);
+}
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
+    case WM_CLOSE:
+        DestroyWindow(hWnd);
+        return 0;
+    case WM_DISPLAYCHANGE:
+        g_screenWidth = GetSystemMetrics(SM_CXSCREEN);
+        g_screenHeight = GetSystemMetrics(SM_CYSCREEN);
+        SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, g_screenWidth, g_screenHeight, SWP_NOACTIVATE);
+        g_redrawRequested = true;
+        return 0;
+    case WM_PAINT:
+    {
+        PAINTSTRUCT paint{};
+        BeginPaint(hWnd, &paint);
+        EndPaint(hWnd, &paint);
+        g_redrawRequested = true;
+        return 0;
+    }
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
@@ -186,14 +249,8 @@ bool LoadPNGTexture(const wchar_t* filePath)
 void LoadConfiguration()
 {
     // Read scale and crosshair settings from a text file in Documents
-    wchar_t configPath[MAX_PATH];
-    DWORD size = GetEnvironmentVariableW(L"USERPROFILE", configPath, MAX_PATH);
-    if (size == 0) return;
-    
-    wcscat_s(configPath, MAX_PATH, L"\\Documents\\Crosshair overlay\\overlay_config.txt");
-    
     FILE* file = nullptr;
-    errno_t err = _wfopen_s(&file, configPath, L"r");
+    errno_t err = _wfopen_s(&file, g_configPath.c_str(), L"r");
     if (err == 0 && file)
     {
         wchar_t line[256];
@@ -401,6 +458,11 @@ void RenderCrosshair()
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
 {
+    g_configDirectory = EnvironmentValue(L"AURORA_OVERLAY_HOME");
+    if (g_configDirectory.empty())
+        g_configDirectory = EnvironmentValue(L"USERPROFILE") + L"\\Documents\\Crosshair overlay";
+    g_configPath = g_configDirectory + L"\\overlay_config.txt";
+
     // Get primary monitor resolution
     g_screenWidth = GetSystemMetrics(SM_CXSCREEN);
     g_screenHeight = GetSystemMetrics(SM_CYSCREEN);
@@ -448,58 +510,88 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     if (!g_hWnd)
         return -1;
 
-    // Allow window to appear over exclusive fullscreen applications
+    // Preserve existing capture affinity; this does not override exclusive fullscreen.
     SetWindowDisplayAffinity(g_hWnd, WDA_MONITOR);
 
     ShowWindow(g_hWnd, SW_SHOW);
     UpdateWindow(g_hWnd);
 
-    // Load initial configuration
+    // Arm notifications before reading so startup changes cannot be lost.
+    HANDLE directoryWatch = WatchConfigurationDirectory();
+    ConfigStamp configStamp;
+    ConfigurationChanged(configStamp);
     LoadConfiguration();
-    
-    // Load the initial crosshair
     wchar_t texturePath[MAX_PATH];
     swprintf_s(texturePath, MAX_PATH, L"%s\\resources\\crosshairs\\%s", resourceDir, g_crosshairName);
     LoadPNGTexture(texturePath);
 
-    // Main message loop
-    MSG msg = {};
-    DWORD lastConfigCheck = GetTickCount();
-    
-    while (msg.message != WM_QUIT)
+    MSG msg{};
+    bool running = true;
+    while (running)
     {
-        if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
+        while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
         {
+            if (msg.message == WM_QUIT)
+            {
+                running = false;
+                break;
+            }
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
-        else
+        if (!running) break;
+        if (g_redrawRequested)
         {
-            // Check for config changes every 500ms
-            DWORD now = GetTickCount();
-            if (now - lastConfigCheck > 500)
-            {
-                wchar_t oldCrosshair[256];
-                wcscpy_s(oldCrosshair, 256, g_crosshairName);
-                float oldScale = g_scale;
-                
-                LoadConfiguration();
-                
-                // Reload texture if crosshair changed
-                if (wcscmp(oldCrosshair, g_crosshairName) != 0)
-                {
-                    swprintf_s(texturePath, MAX_PATH, L"%s\\resources\\crosshairs\\%s", resourceDir, g_crosshairName);
-                    LoadPNGTexture(texturePath);
-                }
-                
-                lastConfigCheck = now;
-            }
-            
+            g_redrawRequested = false;
             RenderCrosshair();
-            Sleep(16);  // ~60 FPS
+        }
+
+        bool watching = directoryWatch != INVALID_HANDLE_VALUE;
+        DWORD result = MsgWaitForMultipleObjectsEx(watching ? 1 : 0,
+            watching ? &directoryWatch : nullptr, watching ? INFINITE : 1000,
+            QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+        bool inspectConfiguration = false;
+        if (watching && result == WAIT_OBJECT_0)
+        {
+            // Rearm first: atomic rename and rapid consecutive writes must be seen.
+            if (!FindNextChangeNotification(directoryWatch))
+            {
+                FindCloseChangeNotification(directoryWatch);
+                directoryWatch = INVALID_HANDLE_VALUE;
+            }
+            inspectConfiguration = true;
+        }
+        else if (!watching && result == WAIT_TIMEOUT)
+        {
+            // Only when notifications are unavailable: one metadata check/second,
+            // with disk parsing gated on a changed timestamp or length.
+            directoryWatch = WatchConfigurationDirectory();
+            inspectConfiguration = true;
+        }
+        else if (result == WAIT_FAILED)
+        {
+            OutputDebugStringW(L"Aurora: window/configuration wait failed.\n");
+            break;
+        }
+        if (inspectConfiguration && ConfigurationChanged(configStamp))
+        {
+            std::wstring oldCrosshair = g_crosshairName;
+            float oldScale = g_scale;
+            LoadConfiguration();
+            if (oldCrosshair != g_crosshairName)
+            {
+                swprintf_s(texturePath, MAX_PATH, L"%s\\resources\\crosshairs\\%s", resourceDir, g_crosshairName);
+                LoadPNGTexture(texturePath);
+            }
+            if (oldCrosshair != g_crosshairName || oldScale != g_scale)
+                g_redrawRequested = true;
         }
     }
-    
+    if (directoryWatch != INVALID_HANDLE_VALUE)
+        FindCloseChangeNotification(directoryWatch);
+    if (IsWindow(g_hWnd)) DestroyWindow(g_hWnd);
+    UnregisterClassW(L"AuroraCrosshair", hInstance);
+
     // Cleanup
     if (g_crosshairTexture)
         delete[] g_crosshairTexture;
