@@ -168,6 +168,14 @@ try {
             $nextSampleAt = $clock.Elapsed.TotalSeconds + $SampleIntervalSeconds
         }
     }
+    # Recheck after the final optional GPU query as well: a process may have
+    # exited or its PID may have been reused during that blocking query.
+    foreach ($targetId in $selectedIds) {
+        $final = Read-ProcessSnapshot $targetId
+        if ($final.StartTicks -ne $previous[$targetId].Snapshot.StartTicks) {
+            throw "Selected PID $targetId was reused; this run is invalid."
+        }
+    }
     $metadata.outcome = 'completed'
 } catch {
     $failure = $_.Exception.Message
