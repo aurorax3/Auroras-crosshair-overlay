@@ -38,7 +38,10 @@ Three fresh-process trials per version used the same finalized harness,
 Debian/Linux, Python 3.12.14, Tk 9, Pillow 12.3.0, psutil 7.2.2 and
 Xvfb 1280×900×24 without a window manager. Original trials ran first, candidate
 second. This shared cloud host was not a controlled gaming benchmark machine.
-The GUI source and companion module hashes match the final implementation.
+The captured GUI source and companion module hashes identify the measured
+performance implementation at `0d108f6`. The subsequent monochrome terminal-style
+theme was validated separately; these timing/RSS numbers are not a new measurement
+of that visual revision.
 
 Values are median **[minimum–maximum]**:
 
@@ -119,3 +122,22 @@ for the changed import path and test-based readiness check, and those current
 instance commands passed. A draft save does not publish an environment snapshot
 or establish fresh-task restoration. Review/save and publish in environment
 settings if retaining that updated cloud setup.
+
+## Monochrome controller theme
+
+The visual follow-up retains Tk and uses static grayscale styles, a monospace
+font, numbered sections and bracketed controls. Preview cards keep their neutral
+background and display the original colored images. Selection has an outlined
+card, and keyboard focus contrasts with the selected tab.
+
+All 32 existing Python/config/Tk/benchmark tests passed after the final styling.
+Separate processes compared every generated preview against the pre-theme
+controller at `67ae3ca`: all 390 PhotoImages have identical RGBA pixel hashes and
+dimensions. PNG resource files and the thumbnail conversion are unchanged.
+The renderer, configuration and process-lifecycle implementation were not changed;
+no timer, background process or dependency was added.
+
+The rendered Xvfb window was inspected and captured in the
+[controller screenshot](images/controller-monochrome.png). Native Windows title
+bar/dialog appearance remains controlled by Windows and was not inspected here.
+Performance figures above remain measurements of the earlier stated revision.

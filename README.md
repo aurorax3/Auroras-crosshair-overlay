@@ -36,6 +36,11 @@ Categories load previews when opened. Select an image and adjust its scale from
 closing flushes pending settings and does not stop the overlay. Use Stop Overlay
 or close the overlay explicitly to stop it.
 
+The controller uses a monochrome terminal-style interface with monospace text.
+Crosshair previews retain their original image colors and transparency.
+
+![Monochrome controller with unchanged color crosshair previews](docs/images/controller-monochrome.png)
+
 Settings retain the two-key text format described in [CONFIGURATION.md](CONFIGURATION.md).
 The default config base remains `%USERPROFILE%\Documents\Crosshair overlay`.
 `AURORA_OVERLAY_HOME` can select another base directory for both processes.

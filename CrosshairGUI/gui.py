@@ -6,6 +6,7 @@ Allows control of crosshair scale and selection with organized tabs
 
 import tkinter as tk
 from tkinter import ttk, messagebox
+from tkinter import font as tkfont
 import os
 import subprocess
 import time
@@ -22,6 +23,16 @@ if str(GUI_DIR) not in sys.path:
 from overlay_config import Settings, read_settings, valid_crosshair, valid_scale, write_settings
 
 LOGGER = logging.getLogger(__name__)
+
+# UI colors only: PNG pixels and their existing thumbnail conversion stay intact.
+BACKGROUND = "#111111"
+PANEL = "#1b1b1b"
+TEXT = "#eeeeee"
+MUTED = "#aaaaaa"
+BORDER = "#555555"
+PREVIEW_BACKGROUND = "#e0e0e0"
+PREVIEW_SELECTED = "#ffffff"
+PREVIEW_TEXT = "#111111"
 
 class CrosshairController:
     def __init__(self, root):
@@ -70,24 +81,66 @@ class CrosshairController:
         self.load_crosshairs()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         
+    def setup_theme(self):
+        """Apply a static terminal-like palette without native-theme color accents."""
+        family = tkfont.nametofont("TkFixedFont", root=self.root).actual("family")
+        self.ui_font = (family, 10)
+        self.title_font = (family, 14, "bold")
+        self.preview_font = (family, 8)
+        self.root.configure(background=BACKGROUND)
+        self.style = ttk.Style(self.root)
+        # Clam honors explicit colors on Windows as well as X11.
+        self.style.theme_use("clam")
+        self.style.configure(".", background=BACKGROUND, foreground=TEXT,
+                             font=self.ui_font, bordercolor=BORDER,
+                             lightcolor=BORDER, darkcolor=BORDER,
+                             focuscolor=TEXT, troughcolor=PANEL)
+        self.style.configure("TFrame", background=BACKGROUND)
+        self.style.configure("TLabel", background=BACKGROUND, foreground=TEXT)
+        self.style.configure("TLabelframe", background=BACKGROUND, bordercolor=BORDER,
+                             relief="solid", borderwidth=1)
+        self.style.configure("TLabelframe.Label", background=BACKGROUND, foreground=MUTED)
+        self.style.configure("TButton", background=PANEL, foreground=TEXT,
+                             padding=(12, 7), relief="solid", borderwidth=1)
+        self.style.map("TButton", background=[("pressed", TEXT), ("active", "#333333")],
+                       foreground=[("disabled", BORDER), ("pressed", BACKGROUND), ("active", TEXT)],
+                       bordercolor=[("focus", TEXT), ("active", TEXT)])
+        self.style.configure("TNotebook", background=BACKGROUND, borderwidth=0,
+                             tabmargins=(0, 0, 0, 0))
+        self.style.configure("TNotebook.Tab", background=PANEL, foreground=MUTED,
+                             padding=(12, 7), borderwidth=1)
+        self.style.map("TNotebook.Tab", background=[("selected", TEXT), ("active", "#333333")],
+                       foreground=[("selected", BACKGROUND), ("active", TEXT)],
+                       lightcolor=[("selected", TEXT)], darkcolor=[("selected", TEXT)],
+                       focuscolor=[("selected", BACKGROUND), ("!selected", TEXT)])
+        self.style.configure("Horizontal.TScale", background=TEXT, troughcolor=PANEL,
+                             bordercolor=BORDER, lightcolor=TEXT, darkcolor=TEXT)
+        self.style.map("Horizontal.TScale", background=[("active", "#ffffff")])
+        self.style.configure("Vertical.TScrollbar", background=BORDER, troughcolor=PANEL,
+                             arrowcolor=TEXT, arrowsize=12, borderwidth=0)
+        self.style.map("Vertical.TScrollbar", background=[("pressed", TEXT), ("active", MUTED)],
+                       arrowcolor=[("pressed", BACKGROUND), ("active", BACKGROUND)])
+
     def setup_ui(self):
+        self.setup_theme()
         # Title
         title_frame = ttk.Frame(self.root)
-        title_frame.pack(fill=tk.X, padx=10, pady=10)
+        title_frame.pack(fill=tk.X, padx=16, pady=(16, 10))
         
-        title = ttk.Label(title_frame, text="Aurora Crosshair Controller", font=("Arial", 14, "bold"))
-        title.pack()
+        title = ttk.Label(title_frame, text="AURORA // CROSSHAIR", font=self.title_font)
+        title.pack(side=tk.LEFT)
+        ttk.Label(title_frame, text="CONTROLLER", foreground=MUTED).pack(side=tk.RIGHT)
         
         # Status frame
-        status_frame = ttk.LabelFrame(self.root, text="Status", padding=10)
-        status_frame.pack(fill=tk.X, padx=10, pady=5)
+        status_frame = ttk.LabelFrame(self.root, text=" [ 01 / OVERLAY ] ", padding=10)
+        status_frame.pack(fill=tk.X, padx=16, pady=5)
         
-        self.status_label = ttk.Label(status_frame, text="Overlay: Not running", foreground="red")
-        self.status_label.pack()
+        self.status_label = ttk.Label(status_frame, text="Overlay: Not running", foreground=TEXT)
+        self.status_label.pack(anchor=tk.W)
         
         # Scale frame
-        scale_frame = ttk.LabelFrame(self.root, text="Crosshair Scale", padding=10)
-        scale_frame.pack(fill=tk.X, padx=10, pady=5)
+        scale_frame = ttk.LabelFrame(self.root, text=" [ 02 / SCALE ] ", padding=10)
+        scale_frame.pack(fill=tk.X, padx=16, pady=5)
         
         slider_frame = ttk.Frame(scale_frame)
         slider_frame.pack(fill=tk.X, pady=5)
@@ -108,12 +161,13 @@ class CrosshairController:
         
         ttk.Label(slider_frame, text="300%").pack(side=tk.LEFT)
         
-        self.scale_label = ttk.Label(scale_frame, text=f"Scale: {int(self.current_scale * 100)}%", font=("Arial", 10, "bold"))
-        self.scale_label.pack()
+        self.scale_label = ttk.Label(scale_frame, text=f"Scale: {int(self.current_scale * 100)}%",
+                                     font=(self.ui_font[0], 10, "bold"))
+        self.scale_label.pack(anchor=tk.W)
         
         # Crosshair selection frame with tabs
-        crosshair_frame = ttk.LabelFrame(self.root, text="Crosshair Selection", padding=5)
-        crosshair_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        crosshair_frame = ttk.LabelFrame(self.root, text=" [ 03 / CROSSHAIRS ] ", padding=8)
+        crosshair_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=5)
         
         # Create notebook (tabbed interface)
         self.notebook = ttk.Notebook(crosshair_frame)
@@ -124,15 +178,15 @@ class CrosshairController:
         
         # Buttons frame
         button_frame = ttk.Frame(self.root)
-        button_frame.pack(fill=tk.X, padx=10, pady=10)
+        button_frame.pack(fill=tk.X, padx=11, pady=(10, 16))
         
-        start_btn = ttk.Button(button_frame, text="Start Overlay", command=self.start_overlay)
+        start_btn = ttk.Button(button_frame, text="[ START OVERLAY ]", command=self.start_overlay)
         start_btn.pack(side=tk.LEFT, padx=5)
         
-        stop_btn = ttk.Button(button_frame, text="Stop Overlay", command=self.stop_overlay)
+        stop_btn = ttk.Button(button_frame, text="[ STOP OVERLAY ]", command=self.stop_overlay)
         stop_btn.pack(side=tk.LEFT, padx=5)
         
-        refresh_btn = ttk.Button(button_frame, text="Refresh Status", command=self.check_overlay_status)
+        refresh_btn = ttk.Button(button_frame, text="[ REFRESH STATUS ]", command=self.check_overlay_status)
         refresh_btn.pack(side=tk.LEFT, padx=5)
         
     def load_crosshairs(self):
@@ -142,7 +196,7 @@ class CrosshairController:
         self._category_canvases = {}
         self._thumbnail_errors = 0
         if not self.resource_path.is_dir():
-            self.status_label.config(text=f"Crosshairs folder not found: {self.resource_path}", foreground="red")
+            self.status_label.config(text=f"Crosshairs folder not found: {self.resource_path}", foreground=TEXT)
             return
         for folder in sorted(self.resource_path.iterdir()):
             if folder.is_dir():
@@ -154,10 +208,10 @@ class CrosshairController:
             self._category_files[""] = root_images
         for category in self._category_files:
             frame = ttk.Frame(self.notebook)
-            self.notebook.add(frame, text=category.capitalize() or "Root")
+            self.notebook.add(frame, text=category.upper() or "ROOT")
             self.tabs[category] = frame
         if not self.tabs:
-            self.status_label.config(text="No crosshair categories found", foreground="red")
+            self.status_label.config(text="No crosshair categories found", foreground=TEXT)
             return
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
         category = self.current_folder.split("/", 1)[0]
@@ -178,7 +232,7 @@ class CrosshairController:
             return
         self._loaded_categories.add(category)
         frame = self.tabs[category]
-        canvas = tk.Canvas(frame, bg="white", highlightthickness=0)
+        canvas = tk.Canvas(frame, bg=BACKGROUND, highlightthickness=0)
         self._category_canvases[category] = canvas
         scrollbar = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
         content = ttk.Frame(canvas)
@@ -219,16 +273,18 @@ class CrosshairController:
                     LOGGER.warning("Further thumbnail errors suppressed")
             button = tk.Button(content, image=photo or "", text=name.rsplit(".", 1)[0],
                                compound="top", command=lambda ch=name, fn=folder: self.select_crosshair(ch, fn),
-                               relief=tk.FLAT, bg="#e0e0e0", activebackground="#b0b0b0",
+                               relief=tk.FLAT, bg=PREVIEW_BACKGROUND, fg=PREVIEW_TEXT,
+                               activebackground="#b0b0b0", activeforeground=PREVIEW_TEXT,
+                               highlightbackground=BORDER, highlightcolor=PREVIEW_TEXT,
                                padx=8, pady=8, width=85 if photo else 12,
-                               wraplength=85, font=("Arial", 7))
+                               wraplength=85, font=self.preview_font)
             button.grid(row=index // 10, column=index % 10, padx=3, pady=3, sticky="nsew")
             for event in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
                 button.bind(event, on_mousewheel)
             self.crosshair_buttons[relative] = button
             if relative == self._current_settings().crosshair:
                 self.selected_button = button
-                button.config(bg="#4CAF50", fg="white")
+                button.config(bg=PREVIEW_SELECTED, fg=PREVIEW_TEXT, relief=tk.SOLID)
         if not self._category_files[category]:
             ttk.Label(content, text=f"No crosshairs in {category}").grid()
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -245,13 +301,13 @@ class CrosshairController:
             return
         # Deselect previous button
         if self.selected_button:
-            self.selected_button.config(bg="#e0e0e0", fg="black")
+            self.selected_button.config(bg=PREVIEW_BACKGROUND, fg=PREVIEW_TEXT, relief=tk.FLAT)
         
         # Select new button
         key = "/".join(part for part in (folder, crosshair) if part)
         if key in self.crosshair_buttons:
             self.selected_button = self.crosshair_buttons[key]
-            self.selected_button.config(bg="#4CAF50", fg="white")
+            self.selected_button.config(bg=PREVIEW_SELECTED, fg=PREVIEW_TEXT, relief=tk.SOLID)
         
         self.current_crosshair = crosshair
         self.current_folder = folder
@@ -283,7 +339,7 @@ class CrosshairController:
             write_settings(self.config_path, settings)
         except (OSError, ValueError) as error:
             message = f"Could not save settings: {error}"
-            self.status_label.config(text=message, foreground="red")
+            self.status_label.config(text=message, foreground=TEXT)
             if message != self._last_config_error:
                 LOGGER.warning("%s", message)
             self._last_config_error = message
@@ -349,10 +405,10 @@ class CrosshairController:
             process = self._find_overlay_process()
             self.overlay_running = process is not None
             self.status_label.config(text="Overlay: Running" if process else "Overlay: Not running",
-                                     foreground="green" if process else "red")
+                                     foreground=TEXT)
             return process
         except (psutil.Error, OSError) as error:
-            self.status_label.config(text=f"Cannot check overlay status: {error}", foreground="orange")
+            self.status_label.config(text=f"Cannot check overlay status: {error}", foreground=TEXT)
             LOGGER.warning("Cannot check overlay status: %s", error)
             return None
 
@@ -369,11 +425,11 @@ class CrosshairController:
         try:
             self._owned_process = subprocess.Popen([str(self.overlay_exe)])
         except OSError as error:
-            self.status_label.config(text=f"Cannot start overlay: {error}", foreground="red")
+            self.status_label.config(text=f"Cannot start overlay: {error}", foreground=TEXT)
             LOGGER.warning("Cannot start overlay: %s", error)
             return
         self._process_action = "starting"
-        self.status_label.config(text="Overlay: Starting", foreground="orange")
+        self.status_label.config(text="Overlay: Starting", foreground=TEXT)
         self._process_after_id = self.root.after(150, self._finish_start)
 
     def _finish_start(self):
@@ -381,10 +437,10 @@ class CrosshairController:
         self._process_action = None
         if self._owned_process is not None and self._process_alive(self._owned_process):
             self.overlay_running = True
-            self.status_label.config(text="Overlay: Running", foreground="green")
+            self.status_label.config(text="Overlay: Running", foreground=TEXT)
         else:
             self.overlay_running = False
-            self.status_label.config(text="Overlay exited during startup", foreground="red")
+            self.status_label.config(text="Overlay exited during startup", foreground=TEXT)
             LOGGER.warning("Overlay exited during startup")
 
     @staticmethod
@@ -423,14 +479,14 @@ class CrosshairController:
             self.check_overlay_status()
             return
         except (psutil.Error, OSError) as error:
-            self.status_label.config(text=f"Cannot stop overlay: {error}", foreground="red")
+            self.status_label.config(text=f"Cannot stop overlay: {error}", foreground=TEXT)
             LOGGER.warning("Cannot stop overlay: %s", error)
             return
         self._process_action = "stopping"
         self._stopping_process = process
         self._stop_stage = "closing" if graceful else "terminating"
         self._stop_deadline = time.monotonic() + (2.0 if graceful else 1.0)
-        self.status_label.config(text="Overlay: Stopping", foreground="orange")
+        self.status_label.config(text="Overlay: Stopping", foreground=TEXT)
         self._process_after_id = self.root.after(50, self._poll_stop)
 
     def _poll_stop(self):
@@ -442,7 +498,7 @@ class CrosshairController:
             self.overlay_running = False
             self._owned_process = None
             self._attached_process = None
-            self.status_label.config(text="Overlay: Stopped", foreground="red")
+            self.status_label.config(text="Overlay: Stopped", foreground=TEXT)
             return
         if time.monotonic() >= self._stop_deadline:
             try:
@@ -454,14 +510,14 @@ class CrosshairController:
                     self._stop_stage = "killing"
                 else:
                     self._process_action = None
-                    self.status_label.config(text="Overlay did not stop; check its process", foreground="red")
+                    self.status_label.config(text="Overlay did not stop; check its process", foreground=TEXT)
                     LOGGER.warning("Overlay did not stop after a bounded shutdown attempt")
                     return
             except (psutil.NoSuchProcess, ProcessLookupError):
                 pass
             except (psutil.Error, OSError) as error:
                 self._process_action = None
-                self.status_label.config(text=f"Cannot stop overlay: {error}", foreground="red")
+                self.status_label.config(text=f"Cannot stop overlay: {error}", foreground=TEXT)
                 LOGGER.warning("Cannot stop overlay: %s", error)
                 return
             self._stop_deadline = time.monotonic() + 1.0
